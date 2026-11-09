@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no" />
+  <title>Ahorra+ · Tus metas de ahorro</title>
+
+  <!-- PWA / iPhone -->
+  <link rel="manifest" href="manifest.webmanifest" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Ahorra+" />
+  <meta name="theme-color" content="#0a0a0a" />
+
+  <link rel="apple-touch-icon" href="icons/icon-180.png" />
+  <link rel="icon" type="image/png" href="icons/icon-192.png" />
+
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <!-- Pantalla de bienvenida / nombre -->
+  <div id="welcome" class="screen">
+    <div class="welcome-card">
+      <img src="icons/icon-192.png" alt="Ahorra+" class="welcome-logo" />
+      <h1>¡Hola! 👋</h1>
+      <p>¿Cómo te llamas? Así te saludo cada vez que abras tu app.</p>
+      <form id="welcome-form">
+        <input type="text" id="name-input" placeholder="Tu nombre" maxlength="24" autocomplete="off" />
+        <button type="submit" class="btn btn-primary">Empezar a ahorrar <span class="sw-icon">→</span></button>
+      </form>
+    </div>
+  </div>
+
+  <!-- App -->
+  <div id="app" class="hidden">
+    <header class="header">
+      <div class="header-top">
+        <button id="toast-btn" class="header-user" title="Toca para un consejo de IA">
+          <span id="greeting-avatar" class="avatar">🙂</span>
+          <div>
+            <span id="greeting" class="greeting">Hola</span>
+            <span class="header-sub">Toca para un consejo de tu IA 💡</span>
+          </div>
+        </button>
+        <div class="header-actions">
+          <button id="notif-btn" class="icon-btn" title="Activar notificaciones">🔔</button>
+          <button id="sound-btn" class="icon-btn" title="Sonidos on/off">🔊</button>
+          <button id="theme-btn" class="icon-btn" title="Blanco y negro">◐</button>
+        </div>
+      </div>
+
+      <!-- Resumen -->
+      <section class="summary-card">
+        <span class="summary-label">Ahorro total</span>
+        <span id="total-savings" class="summary-amount">$0</span>
+        <div class="summary-row">
+          <div><span id="goals-count">0</span> metas</div>
+          <div><span id="week-progress">0</span>% esta semana</div>
+        </div>
+      </section>
+
+      <!-- Mensaje de IA -->
+      <section id="ai-banner" class="ai-banner">
+        <span class="ai-avatar">🤖</span>
+        <p id="ai-message">¡Hola! Estoy aquí para ayudarte a ahorrar.</p>
+      </section>
+    </header>
+
+    <main>
+      <div class="section-head">
+        <h2>Tus metas</h2>
+        <button id="add-goal-btn" class="btn btn-small">＋ Nueva meta</button>
+      </div>
+      <div id="goals-list" class="goals-list"></div>
+    </main>
+
+    <!-- Barra inferior estilo iPhone -->
+    <nav class="tabbar">
+      <button class="tab active" data-tab="inicio">🏠<span>Inicio</span></button>
+      <button class="tab" data-tab="metas">🎯<span>Metas</span></button>
+      <button class="tab tab-fab" id="fab-add">＋</button>
+      <button class="tab" data-tab="ia">🤖<span>IA</span></button>
+      <button class="tab" data-tab="ajustes">⚙️<span>Ajustes</span></button>
+    </nav>
+
+    <!-- Pestaña IA -->
+    <section id="panel-ia" class="panel hidden">
+      <h2>Tu asistente de ahorro 🤖</h2>
+      <div id="chat" class="chat"></div>
+      <form id="chat-form" class="chat-form">
+        <button type="button" id="chat-mic" class="icon-btn">💡</button>
+        <input type="text" id="chat-input" placeholder="Pregúntame cómo ahorrar…" autocomplete="off" />
+        <button type="submit" class="btn btn-primary">Enviar</button>
+      </form>
+    </section>
+
+    <!-- Pestaña Ajustes -->
+    <section id="panel-ajustes" class="panel hidden">
+      <h2>Ajustes ⚙️</h2>
+
+      <div class="setting-card">
+        <label>Tu nombre</label>
+        <div class="row">
+          <input type="text" id="settings-name" maxlength="24" />
+          <button id="save-name" class="btn btn-small">Guardar</button>
+        </div>
+      </div>
+
+      <div class="setting-card">
+        <label>Tema</label>
+        <div class="theme-picker">
+          <button data-theme="light" class="theme-opt">☀️ Blanco</button>
+          <button data-theme="dark" class="theme-opt">🌙 Negro</button>
+          <button data-theme="auto" class="theme-opt">✨ Automático</button>
+        </div>
+      </div>
+
+      <div class="setting-card">
+        <label>Acento</label>
+        <div class="accent-picker" id="accent-picker">
+          <button data-accent="#e8b34b" style="--c:#e8b34b"></button>
+          <button data-accent="#4be88b" style="--c:#4be88b"></button>
+          <button data-accent="#e84b6b" style="--c:#e84b6b"></button>
+          <button data-accent="#4bb3e8" style="--c:#4bb3e8"></button>
+          <button data-accent="#a14be8" style="--c:#a14be8"></button>
+        </div>
+      </div>
+
+      <div class="setting-card">
+        <label>Sonidos</label>
+        <div class="row">
+          <span>Clic y sonidos de la app</span>
+          <label class="switch"><input type="checkbox" id="sound-toggle" checked /><span class="slider"></span></label>
+        </div>
+      </div>
+
+      <div class="setting-card">
+        <label>Notificaciones de la IA</label>
+        <p class="desc">Te aviso cuando avances en tus metas, si no has ahorrado en 3 días, y consejos semanales.</p>
+        <button id="enable-notifs" class="btn btn-primary">🔔 Activar notificaciones</button>
+      </div>
+
+      <button id="reset-btn" class="btn btn-danger">Borrar todo y empezar de nuevo</button>
+      <p class="version">Ahorra+ v1.0 · hecho para ti 💛</p>
+    </section>
+  </div>
+
+  <!-- Modal: agregar/editar meta -->
+  <div id="modal" class="modal hidden">
+    <div class="modal-card">
+      <h3 id="modal-title">Nueva meta</h3>
+      <form id="goal-form">
+        <label>¿Qué quieres ahorrar?</label>
+        <input type="text" id="goal-name" placeholder="Ej. iPhone nuevo 📱" maxlength="40" required />
+        <datalist id="goal-ideas"></datalist>
+        <label>¿Cuánto cuesta?</label>
+        <input type="number" id="goal-total" placeholder="15000" min="1" inputmode="decimal" required />
+        <label>¿Cuánto llevas ahorrado? (puedes dejarlo en 0)</label>
+        <input type="number" id="goal-saved" placeholder="0" min="0" value="0" inputmode="decimal" />
+        <label>Fecha límite (opcional)</label>
+        <input type="date" id="goal-date" />
+        <button type="submit" id="modal-save" class="btn btn-primary">Guardar meta</button>
+        <button type="button" id="modal-cancel" class="btn btn-ghost">Cancelar</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal: agregar dinero -->
+  <div id="add-money-modal" class="modal hidden">
+    <div class="modal-card">
+      <h3 id="money-title">Agregar dinero</h3>
+      <div class="money-quick">
+        <button data-amt="50">+$50</button>
+        <button data-amt="100">+$100</button>
+        <button data-amt="200">+$200</button>
+        <button data-amt="500">+$500</button>
+      </div>
+      <input type="number" id="money-amount" placeholder="O escribe una cantidad" min="1" inputmode="decimal" />
+      <button id="money-confirm" class="btn btn-primary">Agregar a mi meta 💰</button>
+      <button id="money-cancel" class="btn btn-ghost">Cancelar</button>
+    </div>
+  </div>
+
+  <div id="toast" class="toast hidden"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>

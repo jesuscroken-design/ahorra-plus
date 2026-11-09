@@ -1,0 +1,11 @@
+# Sistema
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Sistema, no aplicar esta vez
+node_modules/
+.vercel/
+ghout.txt
+gherr.txt
+*.log
