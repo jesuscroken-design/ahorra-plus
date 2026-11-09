@@ -16,7 +16,7 @@
   <link rel="apple-touch-icon" href="icons/icon-180.png" />
   <link rel="icon" type="image/png" href="icons/icon-192.png" />
 
-  <link rel="stylesheet" href="styles.css?v=22" />
+  <link rel="stylesheet" href="styles.css?v=23" />
 </head>
 <body>
 
@@ -201,6 +201,31 @@
           <p class="stat-help" id="budget-help"></p>
         </div>
 
+        <div class="section-head"><h2>🪣 Gran Bolsa</h2><span class="stat-help">modo sostenible</span></div>
+        <div class="card glass gb-card">
+          <div class="gb-top">
+            <div class="ring-wrap sm">
+              <svg viewBox="0 0 84 84" class="ring">
+                <circle cx="42" cy="42" r="36" class="ring-bg"/>
+                <circle cx="42" cy="42" r="36" id="gb-ring" class="ring-fg"/>
+              </svg>
+              <span class="ring-pct sm" id="gb-score">—</span>
+            </div>
+            <div class="gb-info">
+              <b id="gb-daily">Calculando…</b>
+              <span class="stat-help" id="gb-note">La IA calcula cuánto puedes ahorrar al día <i>sin</i> descuidar tus gastos reales.</span>
+            </div>
+          </div>
+          <label class="share-toggle mt8">
+            <input type="checkbox" id="gb-roundup" /><span>🪙 Redondeo automático: cada gasto se redondea y la diferencia se ahorra</span>
+          </label>
+          <div class="hidden" id="gb-goal-wrap">
+            <label>¿A qué meta va el redondeo?</label>
+            <select id="gb-goal"></select>
+          </div>
+          <p class="stat-help mt8" id="gb-status"></p>
+        </div>
+
         <div class="section-head"><h2>💱 Conversor</h2></div>
         <div class="card glass" id="converter-card">
           <div class="conv-row">
@@ -253,6 +278,18 @@
 
         <div class="section-head"><h2>🏅 Logros</h2><span class="stat-help" id="ach-progress"></span></div>
         <div id="ach-grid" class="ach-grid"></div>
+
+        <div class="section-head"><h2>👥 Grupo en vivo</h2><span class="stat-help">P2P sin servidores</span></div>
+        <div class="card glass group-cta" id="group-open">
+          <div class="group-cta-main">
+            <span class="group-ico">💬</span>
+            <div>
+              <b>Crea o únete a un grupo de ahorro</b>
+              <span class="stat-help" id="group-cta-sub">Chatea en vivo y comparte el progreso de tus metas con familia o amigos</span>
+            </div>
+          </div>
+          <span class="ai-open">›</span>
+        </div>
       </section>
     </main>
 
@@ -296,6 +333,29 @@
       <input type="text" id="chat-input" placeholder="Pregunta por tus finanzas…" autocomplete="off" />
       <button type="submit" class="btn btn-primary send">➜</button>
     </form>
+  </div>
+
+  <div class="panel" id="panel-group">
+    <header class="panel-head">
+      <button class="icon-btn back" data-close="panel-group">‹</button>
+      <div><h2>Grupo de ahorro 👥</h2><span class="stat-help" id="gp-status">Desconectado</span></div>
+      <span class="ai-dot" id="gp-dot" style="opacity:.35"></span>
+    </header>
+    <div class="setting-card glass" id="gp-form">
+      <label>Código del grupo</label>
+      <div class="row">
+        <input type="text" id="gp-code" placeholder="Ej. ahorra-familia-2026" maxlength="40" autocomplete="off" />
+        <button id="gp-join" class="btn btn-sm btn-primary">Entrar</button>
+      </div>
+      <p class="stat-help mt8">Compártele <b>el mismo código</b> a quienes quieras (cámbialo si quieres privacidad). La conexión es directa entre ustedes, P2P vía relays Nostr — no pasa por ningún servidor nuestro.</p>
+    </div>
+    <div id="gp-chat" class="chat" style="min-height:220px"></div>
+    <div id="gp-peers" class="gp-peers"></div>
+    <form id="gp-msgform" class="chat-form glass hidden">
+      <input type="text" id="gp-input" placeholder="Mensaje al grupo…" autocomplete="off" maxlength="300" />
+      <button type="submit" class="btn btn-primary send">➜</button>
+    </form>
+    <button id="gp-leave" class="btn btn-danger w-full mt8 hidden">🚪 Salir del grupo</button>
   </div>
 
   <div class="panel" id="panel-settings">
@@ -369,8 +429,14 @@
         <input type="text" id="goal-name" placeholder="Ej. Vacaciones en Punta Cana 🏝️" maxlength="40" required />
         <label>Ícono</label>
         <div class="emoji-chips" id="goal-emoji-chips"></div>
-        <label>Imagen (URL opcional)</label>
+        <label>Imagen (URL opcional o desde la cámara)</label>
         <input type="url" id="goal-img" placeholder="https://…" />
+        <div class="photo-row">
+          <input type="file" id="goal-photo" accept="image/*" capture="environment" class="hidden-file" />
+          <button type="button" id="goal-photo-btn" class="btn btn-ghost btn-sm" style="flex:1">📷 Tomar foto</button>
+          <button type="button" id="goal-photo-clear" class="btn btn-ghost btn-sm">🗑️</button>
+        </div>
+        <img id="goal-photo-preview" class="goal-photo-preview hidden" alt="" />
         <label>¿Cuánto necesitas?</label>
         <input type="number" id="goal-total" min="1" inputmode="decimal" required />
         <label>¿Cuánto llevas ya?</label>
@@ -501,6 +567,6 @@
   <div id="toast" class="toast hidden"></div>
   <div id="confetti-root"></div>
 
-  <script src="app.js?v=22"></script>
+  <script src="app.js?v=23"></script>
 </body>
 </html>

@@ -34,7 +34,7 @@ let S;
 
 function load(){
   try{ S = JSON.parse(localStorage.getItem(KEY) || "null"); }catch{ S = null; }
-  if(S) return;
+  if(S){ if(!S.gb) S.gb = { roundUp:false, step:50, goal:"" }; return; }
   const o = (()=>{ try{ return JSON.parse(localStorage.getItem(KEY_OLD) || "null") || {}; }catch{ return {}; } })();
   S = {
     owner:o.owner || null, since:today(), avatar:"🙂",
@@ -49,6 +49,7 @@ function load(){
     reminders:[], ach:{}, streakBest:0,
     xp:(o.goals||[]).reduce((a,g)=>a+((g.history||[]).filter(h=>h.amt>0).length*15),0),
     lastDailyNotif:null, lastWeeklyNotif:null, lastRemSent:{},
+    gb:{ roundUp:false, step:50, goal:"" },
     exportedOnce:false, usedConv:false,
   };
   save();
@@ -506,6 +507,8 @@ function openGoalModal(g){
     b.addEventListener("click", ()=>{ chips.querySelectorAll("button").forEach(x=>x.classList.remove("selected")); b.classList.add("selected"); chips.dataset.val = em; SFX.tap(); });
     chips.appendChild(b);
   });
+  const pv = $("goal-photo-preview");
+  if(pv){ if(g?.img){ pv.src = g.img; pv.classList.remove("hidden"); } else { pv.classList.add("hidden"); pv.src = ""; } }
   $("m-goal").classList.remove("hidden");
 }
 function submitGoal(e){
@@ -618,8 +621,69 @@ function saveTx(){
   const name = $("tx-name").value.trim(), amt = parseFloat($("tx-amount").value);
   if(!name || !amt || amt<=0){ SFX.err(); toast("Completa concepto y cantidad 💛"); return; }
   if(txKind === "income"){ S.income.push({ id:rnd(), name, amt:+amt, d:today() }); toast(`🟢 Ingreso +${fmt(amt)}`, true); }
-  else { S.expenses.push({ id:rnd(), name, amt:+amt, cat:$("tx-cat-chips").dataset.val, d:today() }); toast(`🔴 Gasto −${fmt(amt)} en ${$("tx-cat-chips").dataset.val}`); }
+  else {
+    S.expenses.push({ id:rnd(), name, amt:+amt, cat:$("tx-cat-chips").dataset.val, d:today() });
+    toast(`🔴 Gasto −${fmt(amt)} en ${$("tx-cat-chips").dataset.val}`);
+    if(S.gb.roundUp){
+      const step = S.gb.step || 50;
+      const diff = (Math.ceil(amt/step)*step) - amt;
+      if(diff > 0 && applyRoundUp(diff)) toast(`🪙 Redondeo: ${fmt(diff)} ahorrados automáticamente`, true);
+    }
+  }
   save(); closeAll(); renderAll(); checkAch(); SFX.money();
+}
+
+/* ================== GRAN BOLSA · modo sostenible ================== */
+function gbCalc(){
+  const start = new Date(Date.now() - 30*86400000).toISOString().slice(0,10);
+  const inc = S.income.filter(t=>t.d>=start).reduce((a,t)=>a+t.amt,0)/30;
+  const exp = S.expenses.filter(t=>t.d>=start).reduce((a,t)=>a+t.amt,0)/30;
+  const commits = S.goals.filter(g=>!g.done)
+    .reduce((a,g)=>a + Math.ceil(Math.max(0,(g.total-g.saved))/daysOf(g)), 0);
+  const free = inc - exp - commits;
+  const score = inc > 0
+    ? Math.max(0, Math.min(100, Math.round((free/Math.max(1,inc))*100)))
+    : (free >= 0 ? 60 : 0);
+  return { inc, exp, commits, free, score };
+}
+function renderGB(){
+  const wrap = $("gb-roundup"); if(!wrap) return;
+  wrap.checked = !!S.gb.roundUp;
+  $("gb-goal-wrap").classList.toggle("hidden", !S.gb.roundUp);
+  const sel = $("gb-goal");
+  const act = S.goals.filter(g=>!g.done);
+  sel.innerHTML = act.map(g=>`<option value="${g.id}">${g.emoji} ${esc(g.name)}</option>`).join("") || "<option>Sin metas activas</option>";
+  if(S.gb.goal && act.some(g=>g.id===S.gb.goal)) sel.value = S.gb.goal;
+  const R = gbCalc();
+  $("gb-ring").style.strokeDashoffset = 226*(1 - R.score/100);
+  $("gb-score").textContent = R.score + "%";
+  $("gb-daily").innerHTML = R.free >= 0
+    ? `Libre sostenible: <span style="color:var(--ac)">${fmt(Math.floor(R.free))}</span>/día`
+    : `<span style="color:var(--red)">Déficit de ${fmt(Math.ceil(-R.free))}/día</span>`;
+  let note;
+  if(R.free >= 0){
+    note = `Últimos 30 días: ingresos ${fmt(R.inc)} · gastos ${fmt(R.exp)} · tus metas consumen ${fmt(R.commits)}/día.`;
+    if(Math.floor(R.free) > 0) note += ` Te sobran ${fmt(Math.floor(R.free))} diarios: puedes sumarlos a una meta 💚`;
+    else note = `Justo-justo 🐷 — verde significa que no estás en déficit con tus metas actuales.`;
+  } else {
+    note = `⚠️ Gastas más de lo que ingresas. Baja el ritmo de un gasto o revisa Stats 🕵️`;
+  }
+  $("gb-note").textContent = note;
+  $("gb-status").textContent = S.gb.roundUp
+    ? `🪙 Redondeo activo a múltiplos de ${S.gb.step}: cada gasto ofrece la diferencia y la meta elegida la recibe al instante.`
+    : "";
+}
+function applyRoundUp(diff){
+  const g = S.goals.find(x=>x.id===S.gb.goal) || S.goals.filter(x=>!x.done)[0];
+  if(!g){ return false; }
+  g.saved += diff;
+  g.history = g.history || [];
+  g.history.push({ d:today(), amt:diff, by:"Redondeo 🪙" });
+  g.contribs = g.contribs || {};
+  g.contribs["Redondeo 🪙"] = (g.contribs["Redondeo 🪙"]||0) + diff;
+  if(g.saved >= g.total) g.done = true;
+  renderGB();
+  return true;
 }
 
 /* ================== CALENDARIO ================== */
@@ -970,10 +1034,137 @@ function chatSend(){
   setTimeout(()=>{ ty.remove(); bubble(aiReply(q)); SFX.tap(); }, 650 + Math.random()*500);
 }
 
+/* ================== FOTO DE META (cámara iPhone) ================== */
+function wirePhoto(){
+  const btn = $("goal-photo-btn"); if(!btn) return;
+  btn.addEventListener("click", ()=>$("goal-photo").click());
+  $("goal-photo-clear").addEventListener("click", ()=>{
+    $("goal-photo").value = ""; $("goal-img").value = "";
+    const p = $("goal-photo-preview"); p.classList.add("hidden"); p.src = "";
+    toast("Foto de la meta eliminada");
+  });
+  $("goal-photo").addEventListener("change", e=>{
+    const f = e.target.files?.[0]; if(!f) return;
+    if(f.size > 12*1024*1024){ SFX.err(); toast("Foto muy grande 😅"); e.target.value=""; return; }
+    const reader = new FileReader();
+    reader.onload = ev=>{
+      const img = new Image();
+      img.onload = ()=>{
+        const max = 640, r = Math.min(max/img.width, max/img.height, 1);
+        const c = document.createElement("canvas");
+        c.width = Math.max(1, Math.round(img.width*r));
+        c.height = Math.max(1, Math.round(img.height*r));
+        c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
+        const url = c.toDataURL("image/jpeg", .72);
+        $("goal-img").value = url;
+        const p = $("goal-photo-preview"); p.src = url; p.classList.remove("hidden");
+        SFX.pop(); toast("📷 Foto agregada a la meta", true);
+      };
+      img.onerror = ()=>{ SFX.err(); toast("No pude leer esa imagen 😕"); };
+      img.src = ev.target.result;
+    };
+    reader.readAsDataURL(f);
+  });
+}
+
+/* ================== GRUPO EN VIVO · P2P Trystero/Nostr ================== */
+let GP = null;
+async function gpJoin(){
+  const raw = $("gp-code").value.trim().replace(/\s+/g,"-").toLowerCase();
+  if(!raw){ SFX.err(); toast("Escribe un código para el grupo 💬"); return; }
+  $("gp-status").textContent = "Conectando…";
+  $("gp-dot").style.opacity = ".7";
+  try{
+    const nostring = await import("https://esm.sh/trystero@0.20.0/nostr");
+    const room = nostring.joinRoom({ appId:"ahorra-plus-v25" }, raw);
+    const [recvMsg, sendMsg] = room.makeAction("msg");
+    const [recvStat, sendStat] = room.makeAction("stat");
+    GP = { room, code:raw, sendMsg, sendStat, peers:{} };
+    S.gb.code = raw; save();
+    recvMsg((data, pid)=>{
+      if(!data || !data.t) return;
+      gpBubble(data.n || "Alguien", data.t, false);
+      if(!$("panel-group").classList.contains("open")) notify(`💬 ${data.n || "El grupo"}`, data.t);
+    });
+    recvStat((data, pid)=>{ if(data && data.n){ GP.peers[pid] = { name:data.n, saved:data.s||0, streak:data.r||0, goal:data.g||"", pct:data.p??100 }; renderGP(); } });
+    room.onPeerJoin(pid=>{
+      if(!GP) return;
+      gpSys("👋 Entró al grupo");
+      renderGP(); sendMyStat();
+    });
+    room.onPeerLeave(pid=>{
+      if(!GP) return;
+      const n = GP.peers[pid]?.name || "Alguien";
+      delete GP.peers[pid];
+      gpSys(`🚪 ${n} salió del grupo`);
+      renderGP();
+    });
+    gpSys(`✅ Conectado — comparte el código "${raw}" con quien quieras`);
+    $("gp-form").classList.add("hidden");
+    $("gp-msgform").classList.remove("hidden");
+    $("gp-leave").classList.remove("hidden");
+    renderGP(); sendMyStat();
+    SFX.win(); toast("👥 Grupo conectado", true);
+  }catch(err){
+    GP = null;
+    $("gp-status").textContent = "Sin conexión";
+    $("gp-dot").style.opacity = ".35";
+    SFX.err();
+    toast("No se pudo conectar (¿sin internet?) 😕", true);
+  }
+}
+function gpLeave(){
+  if(!GP) return;
+  try{ GP.room.leave(); }catch{}
+  GP = null;
+  gpSys("🔌 Saliste del grupo");
+  $("gp-status").textContent = "Desconectado";
+  $("gp-dot").style.opacity = ".35";
+  $("gp-form").classList.remove("hidden");
+  $("gp-msgform").classList.add("hidden");
+  $("gp-leave").classList.add("hidden");
+  $("gp-peers").innerHTML = "";
+  toast("Saliste del grupo 👋");
+}
+function sendMyStat(){
+  if(!GP) return;
+  const g = S.goals.filter(x=>!x.done).sort((a,b)=>daysOf(a)-daysOf(b))[0];
+  try{
+    GP.sendStat({ n:S.owner||"Yo", s:totalSaved(), r:streakCalc(),
+      g:g ? `${g.emoji} ${g.name}` : "—",
+      p:g ? Math.min(100, Math.round(g.saved/Math.max(g.total,1)*100)) : 100 });
+  }catch{}
+}
+function gpBubble(n, t, self){
+  const c = $("gp-chat"), b = document.createElement("div");
+  b.className = "bubble " + (self ? "me" : "ai");
+  b.innerHTML = self ? esc(t) : `<span class="gp-who">${esc(n)}</span><br>${esc(t)}`;
+  c.appendChild(b);
+  c.scrollTop = c.scrollHeight;
+  while(c.children.length > 80) c.firstChild.remove();
+}
+function gpSys(t){
+  const c = $("gp-chat"), b = document.createElement("div");
+  b.className = "bubble sys"; b.textContent = t;
+  c.appendChild(b); c.scrollTop = c.scrollHeight;
+}
+function renderGP(){
+  if(!$("gp-peers")) return;
+  if(!GP){ $("gp-status").textContent = "Desconectado"; $("gp-dot").style.opacity = ".35"; return; }
+  const ps = Object.entries(GP.peers);
+  $("gp-status").textContent = ps.length
+    ? `En línea · ${ps.map(([,p])=>p.name).join(", ")}`
+    : "En línea · esperando a alguien…";
+  $("gp-dot").style.opacity = "1";
+  $("gp-peers").innerHTML = ps.map(([,p])=>
+    `<span class="gp-chip"><b>${esc(p.name)}</b> · 💰${fmt(p.saved)} · 🔥${p.streak}${p.goal && p.pct<100 ? ` · ${esc(p.goal)} ${p.pct}%` : ""}${p.pct>=100 ? " · 🏆 ¡meta cumplida!" : ""}</span>`
+  ).join("");
+}
+
 /* ================== RENDER TOTAL ================== */
 function renderAll(){
   renderDashboard(); renderGoals(); renderCalendar(); renderRems();
-  renderActivity(); renderBudget(); renderProfile();
+  renderActivity(); renderBudget(); renderProfile(); renderGB();
   drawStatsCharts();
 }
 
@@ -1123,6 +1314,30 @@ function wire(){
     pendingGoal = ds.goal.id; openMoney();
   });
   $("chat-form").addEventListener("submit", e => { e.preventDefault(); chatSend(); });
+
+  // v2.5: gran bolsa, cámara, grupo
+  wirePhoto();
+  $("gb-roundup").addEventListener("change", e=>{
+    S.gb.roundUp = e.target.checked;
+    if(e.target.checked) S.gb.goal = $("gb-goal").value || S.gb.goal;
+    save(); renderGB();
+    toast(e.target.checked ? "🪙 Redondeo automático activado" : "Redondeo desactivado");
+  });
+  $("gb-goal").addEventListener("change", e=>{ S.gb.goal = e.target.value; save(); });
+  $("group-open").addEventListener("click", ()=>{
+    if((S.gb.code||"") && !$("gp-code").value.trim()) $("gp-code").value = S.gb.code;
+    openPanel("panel-group");
+  });
+  $("gp-join").addEventListener("click", gpJoin);
+  $("gp-leave").addEventListener("click", gpLeave);
+  $("gp-code").addEventListener("keydown", e=>{ if(e.key === "Enter"){ e.preventDefault(); gpJoin(); } });
+  $("gp-msgform").addEventListener("submit", e=>{
+    e.preventDefault();
+    const t = $("gp-input").value.trim(); if(!t) return;
+    gpBubble(S.owner || "Yo", t, true);
+    if(GP){ try{ GP.sendMsg({ n:S.owner || "Yo", t }); }catch{} }
+    $("gp-input").value = "";
+  });
 }
 
 /* ================== SALUDO ================== */
