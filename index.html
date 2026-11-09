@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no" />
-  <title>Ahorra+ · Tus metas de ahorro</title>
+  <title>Ahorra+ · Ahorro, metas y riqueza</title>
 
   <!-- PWA / iPhone -->
   <link rel="manifest" href="manifest.webmanifest" />
@@ -11,179 +11,496 @@
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="Ahorra+" />
-  <meta name="theme-color" content="#0a0a0a" />
-
+  <meta name="theme-color" content="#050708" />
+  <meta name="color-scheme" content="dark light" />
   <link rel="apple-touch-icon" href="icons/icon-180.png" />
   <link rel="icon" type="image/png" href="icons/icon-192.png" />
 
-  <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="styles.css?v=22" />
 </head>
 <body>
-  <!-- Pantalla de bienvenida / nombre -->
-  <div id="welcome" class="screen">
-    <div class="welcome-card">
+
+  <!-- Decoración de fondo (orbes de luz y guiones) -->
+  <div class="bg-decor" aria-hidden="true">
+    <div class="orb orb-1"></div>
+    <div class="orb orb-2"></div>
+    <div class="coins-outline">💚</div>
+  </div>
+
+  <!-- ====== ANIMACIÓN DE CARGA ====== -->
+  <div id="splash" class="splash">
+    <img src="icons/icon-512.png" alt="" class="splash-logo" />
+    <div class="splash-name">Ahorra<span>+</span></div>
+  </div>
+
+  <!-- ====== BIENVENIDA ====== -->
+  <div id="welcome" class="screen hidden">
+    <div class="welcome-card glass">
       <img src="icons/icon-192.png" alt="Ahorra+" class="welcome-logo" />
-      <h1>¡Hola! 👋</h1>
-      <p>¿Cómo te llamas? Así te saludo cada vez que abras tu app.</p>
+      <h1>Riqueza a tu manera 👋</h1>
+      <p>¿Cómo te llamas? Así te saludo cada vez que abres tu app.</p>
       <form id="welcome-form">
         <input type="text" id="name-input" placeholder="Tu nombre" maxlength="24" autocomplete="off" />
-        <button type="submit" class="btn btn-primary">Empezar a ahorrar <span class="sw-icon">→</span></button>
+        <button type="submit" class="btn btn-primary">Empezar a ahorrar →</button>
       </form>
     </div>
   </div>
 
-  <!-- App -->
+  <!-- ====== APP ====== -->
   <div id="app" class="hidden">
-    <header class="header">
-      <div class="header-top">
-        <button id="toast-btn" class="header-user" title="Toca para un consejo de IA">
-          <span id="greeting-avatar" class="avatar">🙂</span>
-          <div>
-            <span id="greeting" class="greeting">Hola</span>
-            <span class="header-sub">Toca para un consejo de tu IA 💡</span>
-          </div>
-        </button>
-        <div class="header-actions">
-          <button id="notif-btn" class="icon-btn" title="Activar notificaciones">🔔</button>
-          <button id="sound-btn" class="icon-btn" title="Sonidos on/off">🔊</button>
-          <button id="theme-btn" class="icon-btn" title="Blanco y negro">◐</button>
+
+    <header class="topbar">
+      <button id="profile-btn" class="profile-chip">
+        <span id="top-avatar" class="avatar sm">🙂</span>
+        <div>
+          <span id="greeting" class="greeting">Hola</span>
+          <span id="top-balance" class="top-balance">Balance $0</span>
         </div>
+      </button>
+      <div class="top-actions">
+        <button id="notif-btn" class="icon-btn" title="Notificaciones">🔔</button>
+        <button id="sound-btn" class="icon-btn" title="Sonidos">🔊</button>
+        <button id="settings-btn" class="icon-btn" title="Ajustes">⚙️</button>
       </div>
-
-      <!-- Resumen -->
-      <section class="summary-card">
-        <span class="summary-label">Ahorro total</span>
-        <span id="total-savings" class="summary-amount">$0</span>
-        <div class="summary-row">
-          <div><span id="goals-count">0</span> metas</div>
-          <div><span id="week-progress">0</span>% esta semana</div>
-        </div>
-      </section>
-
-      <!-- Mensaje de IA -->
-      <section id="ai-banner" class="ai-banner">
-        <span class="ai-avatar">🤖</span>
-        <p id="ai-message">¡Hola! Estoy aquí para ayudarte a ahorrar.</p>
-      </section>
     </header>
 
-    <main>
-      <div class="section-head">
-        <h2>Tus metas</h2>
-        <button id="add-goal-btn" class="btn btn-small">＋ Nueva meta</button>
-      </div>
-      <div id="goals-list" class="goals-list"></div>
+    <main id="main">
+
+      <!-- ============ VISTA: INICIO ============ -->
+      <section class="view" id="view-home">
+        <div class="dash-grid">
+          <div class="card hero glass">
+            <div class="hero-top">
+              <span>Ahorro total 💰</span>
+              <span class="chip-emerald" id="hero-currency">DOP</span>
+            </div>
+            <div class="hero-amount" id="total-savings">$0</div>
+            <canvas id="hero-spark" class="hero-spark" height="44"></canvas>
+            <div class="hero-foot">
+              <div><b id="g-count">0</b> metas <i id="g-done"></i></div>
+              <div class="streak-mini" id="streak-mini">🔥 0 días</div>
+            </div>
+          </div>
+
+          <div class="card stat glass">
+            <span class="stat-label">🟢 Ingresos del mes</span>
+            <b class="stat-amount emerald" id="m-income">$0</b>
+            <canvas id="spark-income" class="spark" height="30"></canvas>
+          </div>
+
+          <div class="card stat glass">
+            <span class="stat-label">🔴 Gastos del mes</span>
+            <b class="stat-amount red" id="m-expenses">$0</b>
+            <canvas id="spark-expenses" class="spark" height="30"></canvas>
+          </div>
+
+          <div class="card stat glass wide">
+            <span class="stat-label">⚖️ Balance libre</span>
+            <b class="stat-amount" id="m-balance">$0</b>
+            <span class="stat-help" id="balance-help">Disponible para ahorrar</span>
+          </div>
+        </div>
+
+        <!-- Widget de ahorro diario -->
+        <div class="card widget-daily glass" id="widget-daily">
+          <div class="ring-wrap">
+            <svg viewBox="0 0 84 84" class="ring">
+              <circle cx="42" cy="42" r="36" class="ring-bg"/>
+              <circle cx="42" cy="42" r="36" id="ring-fg" class="ring-fg"/>
+            </svg>
+            <span class="ring-pct" id="ring-pct">0%</span>
+          </div>
+          <div class="widget-d-info">
+            <span>Widget de ahorro diario</span>
+            <b id="daily-suggest">Sugerido: $0</b>
+            <span class="stat-help">Sigue una meta diaria y no rompas la racha 🔥</span>
+          </div>
+          <button class="btn btn-primary btn-sm" id="widget-save">＋ Ahorrar</button>
+        </div>
+
+        <!-- IA banner -->
+        <div class="ai-banner glass" id="ai-banner">
+          <span class="ai-avatar">🤖</span>
+          <p id="ai-message">Analizando tus números…</p>
+          <span class="ai-open">›</span>
+        </div>
+
+        <div class="section-head">
+          <h2>Mis metas</h2>
+          <button class="btn-link" id="go-goals">Ver todas ›</button>
+        </div>
+        <div id="goals-preview" class="goal-preview"></div>
+
+        <div class="section-head">
+          <h2>Actividad</h2>
+          <button class="btn-link" id="go-activity">Ver todo ›</button>
+        </div>
+        <div id="recent-tx" class="tx-list"></div>
+      </section>
+
+      <!-- ============ VISTA: METAS ============ -->
+      <section class="view hidden" id="view-goals">
+        <div class="segmented">
+          <button class="seg active" data-seg="goals">🎯 Mis metas</button>
+          <button class="seg" data-seg="cal">📅 Calendario</button>
+          <button class="seg" data-seg="rem">⏰ Recordatorios</button>
+        </div>
+
+        <div id="seg-goals" class="segpane">
+          <div id="goals-list" class="goal-list"></div>
+        </div>
+
+        <div id="seg-cal" class="segpane hidden">
+          <div class="cal-card glass">
+            <div class="cal-head">
+              <button id="cal-prev" class="icon-btn sm">‹</button>
+              <b id="cal-title">Noviembre 2026</b>
+              <button id="cal-next" class="icon-btn sm">›</button>
+            </div>
+            <div class="cal-grid" id="cal-grid"></div>
+            <p class="stat-help" id="cal-summary" style="margin-top:12px"></p>
+          </div>
+        </div>
+
+        <div id="seg-rem" class="segpane hidden">
+          <p class="stat-help" style="margin-bottom:12px">La IA te envía notificaciones mientras la app esté abierta o instalada en tu iPhone 📲</p>
+          <div id="rem-list"></div>
+          <button class="btn btn-ghost w-full" id="rem-add">＋ Nuevo recordatorio</button>
+        </div>
+      </section>
+
+      <!-- ============ VISTA: ESTADÍSTICAS ============ -->
+      <section class="view hidden" id="view-stats">
+        <div class="section-head"><h2>📊 Estadísticas</h2><button class="btn-link" id="export-btn">⬇️ Exportar</button></div>
+
+        <div class="card glass">
+          <div class="sechead2"><b>Ahorro · últimas 8 semanas</b><span class="stat-help" id="bar-legend-total"></span></div>
+          <canvas id="chart-weeks" height="190"></canvas>
+        </div>
+
+        <div class="row2">
+          <div class="card glass">
+            <div class="sechead2"><b>Gastos por categoría</b></div>
+            <canvas id="chart-cats" height="150"></canvas>
+            <div id="cat-legend" class="cat-legend"></div>
+          </div>
+          <div class="card glass">
+            <div class="sechead2"><b>Progreso de metas</b></div>
+            <div id="goal-bars" class="goal-bars"></div>
+          </div>
+        </div>
+
+        <div class="section-head"><h2>Presupuesto mensual</h2><button class="btn-link" id="budget-edit">Editar</button></div>
+        <div class="card glass" id="budget-card">
+          <div class="budget-head">
+            <div><span class="stat-label">Presupuesto</span><b id="budget-amount">$0</b></div>
+            <div style="text-align:right"><span class="stat-label">Gastado</span><b id="budget-spent">$0</b></div>
+          </div>
+          <div class="goal-bar big"><div class="goal-fill" id="budget-fill" style="width:0%"></div></div>
+          <div class="budget-chips" id="budget-chips"></div>
+          <p class="stat-help" id="budget-help"></p>
+        </div>
+
+        <div class="section-head"><h2>💱 Conversor</h2></div>
+        <div class="card glass" id="converter-card">
+          <div class="conv-row">
+            <input type="number" id="conv-amount" value="100" inputmode="decimal" min="0" />
+            <select id="conv-from">
+              <option value="DOP">🇩🇴 DOP</option>
+              <option value="USD">🇺🇸 USD</option>
+              <option value="EUR">🇪🇺 EUR</option>
+            </select>
+          </div>
+          <button id="conv-swap" class="conv-swap">⇅</button>
+          <div class="conv-row">
+            <input type="number" id="conv-result" disabled />
+            <select id="conv-to">
+              <option value="DOP">🇩🇴 DOP</option>
+              <option value="USD" selected>🇺🇸 USD</option>
+              <option value="EUR">🇪🇺 EUR</option>
+            </select>
+          </div>
+          <div class="conv-rates" id="conv-rates"></div>
+        </div>
+      </section>
+
+      <!-- ============ VISTA: PERFIL ============ -->
+      <section class="view hidden" id="view-profile">
+        <div class="card profile-card glass">
+          <button class="avatar xl" id="avatar-edit" title="Cambiar avatar">🙂</button>
+          <div class="profile-name">
+            <b id="profile-name">—</b>
+            <span id="profile-since" class="stat-help">Miembro desde —</span>
+          </div>
+          <div class="level-card glass">
+            <div class="level-row">
+              <b id="level-num">Nivel 1 · Ahorrador 🐷</b>
+              <span id="level-xp" class="stat-help">0 XP</span>
+            </div>
+            <div class="goal-bar"><div class="goal-fill" id="xp-fill" style="width:0%"></div></div>
+            <span class="stat-help" id="xp-next">— XP para el siguiente nivel</span>
+          </div>
+        </div>
+
+        <div class="row2">
+          <div class="card glass stat-mini"><span>Racha actual 🔥</span><b id="p-streak">0</b><span class="stat-help">días seguidos</span></div>
+          <div class="card glass stat-mini"><span>Mejor racha 🏅</span><b id="p-streak-best">0</b><span class="stat-help">récord personal</span></div>
+        </div>
+        <div class="row2">
+          <div class="card glass stat-mini"><span>Depósitos 🐷</span><b id="p-deposits">0</b></div>
+          <div class="card glass stat-mini"><span>Metas cumplidas 🏆</span><b id="p-goals-done">0</b></div>
+        </div>
+
+        <div class="section-head"><h2>🏅 Logros</h2><span class="stat-help" id="ach-progress"></span></div>
+        <div id="ach-grid" class="ach-grid"></div>
+      </section>
     </main>
 
-    <!-- Barra inferior estilo iPhone -->
-    <nav class="tabbar">
-      <button class="tab active" data-tab="inicio">🏠<span>Inicio</span></button>
-      <button class="tab" data-tab="metas">🎯<span>Metas</span></button>
-      <button class="tab tab-fab" id="fab-add">＋</button>
-      <button class="tab" data-tab="ia">🤖<span>IA</span></button>
-      <button class="tab" data-tab="ajustes">⚙️<span>Ajustes</span></button>
+    <!-- ====== NAVEGACIÓN INFERIOR ====== -->
+    <nav class="tabbar" id="tabbar">
+      <button class="tab active" data-tab="home"><svg class="tb-ico" viewBox="0 0 24 24"><path class="ico-fill" d="M4 10.5 12 4l8 6.5V20a1 1 0 0 1-1 1h-5v-6h-4v6H5a1 1 0 0 1-1-1v-9.5Z"/></svg><span>Inicio</span></button>
+      <button class="tab" data-tab="goals"><svg class="tb-ico" viewBox="0 0 24 24"><path class="ico-stroke" d="M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18Z"/><circle cx="12" cy="12" r="5" class="ico-stroke"/><circle cx="12" cy="12" r="1.6" fill="currentColor"/></svg><span>Metas</span></button>
+      <button class="tab-fab" id="fab"><svg class="tb-ico fab-ico" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/></svg></button>
+      <button class="tab" data-tab="stats"><svg class="tb-ico" viewBox="0 0 24 24"><path class="ico-stroke" d="M5 20V10M12 20V4M19 20v-7" stroke-width="2.6"/></svg><span>Stats</span></button>
+      <button class="tab" data-tab="profile"><svg class="tb-ico" viewBox="0 0 24 24"><circle cx="12" cy="8.4" r="3.8" class="ico-stroke" stroke-width="2.2"/><path class="ico-stroke" stroke-width="2.2" d="M4.8 19.5c1.6-3 4.3-4.6 7.2-4.6s5.6 1.6 7.2 4.6"/></svg><span>Perfil</span></button>
+      <div class="pill" id="nav-pill"></div>
     </nav>
-
-    <!-- Pestaña IA -->
-    <section id="panel-ia" class="panel hidden">
-      <h2>Tu asistente de ahorro 🤖</h2>
-      <div id="chat" class="chat"></div>
-      <form id="chat-form" class="chat-form">
-        <button type="button" id="chat-mic" class="icon-btn">💡</button>
-        <input type="text" id="chat-input" placeholder="Pregúntame cómo ahorrar…" autocomplete="off" />
-        <button type="submit" class="btn btn-primary">Enviar</button>
-      </form>
-    </section>
-
-    <!-- Pestaña Ajustes -->
-    <section id="panel-ajustes" class="panel hidden">
-      <h2>Ajustes ⚙️</h2>
-
-      <div class="setting-card">
-        <label>Tu nombre</label>
-        <div class="row">
-          <input type="text" id="settings-name" maxlength="24" />
-          <button id="save-name" class="btn btn-small">Guardar</button>
-        </div>
-      </div>
-
-      <div class="setting-card">
-        <label>Tema</label>
-        <div class="theme-picker">
-          <button data-theme="light" class="theme-opt">☀️ Blanco</button>
-          <button data-theme="dark" class="theme-opt">🌙 Negro</button>
-          <button data-theme="auto" class="theme-opt">✨ Automático</button>
-        </div>
-      </div>
-
-      <div class="setting-card">
-        <label>Acento</label>
-        <div class="accent-picker" id="accent-picker">
-          <button data-accent="#e8b34b" style="--c:#e8b34b"></button>
-          <button data-accent="#4be88b" style="--c:#4be88b"></button>
-          <button data-accent="#e84b6b" style="--c:#e84b6b"></button>
-          <button data-accent="#4bb3e8" style="--c:#4bb3e8"></button>
-          <button data-accent="#a14be8" style="--c:#a14be8"></button>
-        </div>
-      </div>
-
-      <div class="setting-card">
-        <label>Sonidos</label>
-        <div class="row">
-          <span>Clic y sonidos de la app</span>
-          <label class="switch"><input type="checkbox" id="sound-toggle" checked /><span class="slider"></span></label>
-        </div>
-      </div>
-
-      <div class="setting-card">
-        <label>Notificaciones de la IA</label>
-        <p class="desc">Te aviso cuando avances en tus metas, si no has ahorrado en 3 días, y consejos semanales.</p>
-        <button id="enable-notifs" class="btn btn-primary">🔔 Activar notificaciones</button>
-      </div>
-
-      <button id="reset-btn" class="btn btn-danger">Borrar todo y empezar de nuevo</button>
-      <p class="version">Ahorra+ v1.0 · hecho para ti 💛</p>
-    </section>
   </div>
 
-  <!-- Modal: agregar/editar meta -->
-  <div id="modal" class="modal hidden">
-    <div class="modal-card">
-      <h3 id="modal-title">Nueva meta</h3>
+  <!-- ====== PANELES SLIDE (actividad, chat, ajustes) ====== -->
+  <div class="panel" id="panel-activity">
+    <header class="panel-head">
+      <button class="icon-btn back" data-close="panel-activity">‹</button>
+      <h2>Movimientos</h2>
+      <button class="icon-btn" id="export-btn2">⬇️</button>
+    </header>
+    <div class="seghead" id="tx-months">
+      <button id="tx-prev" class="icon-btn sm">‹</button>
+      <b id="tx-month-title">Noviembre 2026</b>
+      <button id="tx-next" class="icon-btn sm">›</button>
+    </div>
+    <div class="tx-summary" id="tx-summary"></div>
+    <div id="tx-list" class="tx-list"></div>
+    <button class="btn btn-ghost w-full" id="export-report">📄 Exportar reporte del mes</button>
+  </div>
+
+  <div class="panel" id="panel-chat">
+    <header class="panel-head">
+      <button class="icon-btn back" data-close="panel-chat">‹</button>
+      <div><h2>IA financiera</h2><span class="stat-help" id="ai-status">En línea · analizando tus datos</span></div>
+      <span class="ai-dot"></span>
+    </header>
+    <div id="chat" class="chat"></div>
+    <form id="chat-form" class="chat-form glass">
+      <button type="button" id="chat-calc" class="icon-btn" title="Calculadora">🧮</button>
+      <input type="text" id="chat-input" placeholder="Pregunta por tus finanzas…" autocomplete="off" />
+      <button type="submit" class="btn btn-primary send">➜</button>
+    </form>
+  </div>
+
+  <div class="panel" id="panel-settings">
+    <header class="panel-head">
+      <button class="icon-btn back" data-close="panel-settings">‹</button>
+      <h2>Ajustes</h2><span></span>
+    </header>
+    <div class="setting-card glass">
+      <label>Nombre</label>
+      <div class="row"><input type="text" id="settings-name" maxlength="24" /><button id="save-name" class="btn btn-sm btn-primary">Guardar</button></div>
+    </div>
+    <div class="setting-card glass">
+      <label>Tema</label>
+      <div class="theme-picker">
+        <button data-theme="dark" class="theme-opt">🌙 Oscuro</button>
+        <button data-theme="light" class="theme-opt">☀️ Claro</button>
+        <button data-theme="auto" class="theme-opt">✨ Auto</button>
+      </div>
+      <label style="margin-top:14px">Color de acento</label>
+      <div class="accent-picker" id="accent-picker">
+        <button data-accent="emerald" style="--c:#10d9a0" title="Esmeralda"></button>
+        <button data-accent="gold" style="--c:#f0b429" title="Dorado"></button>
+        <button data-accent="sky" style="--c:#38bdf8" title="Cian"></button>
+        <button data-accent="rose" style="--c:#fb7185" title="Rosa"></button>
+      </div>
+    </div>
+    <div class="setting-card glass">
+      <label>Moneda de la app</label>
+      <div class="conv-row"><select id="settings-currency"><option>DOP</option><option>USD</option><option>EUR</option></select></div>
+      <label style="margin-top:14px">Tasas de cambio (a DOP)</label>
+      <div class="rate-edit" id="rate-edit"></div>
+      <p class="stat-help">Edita arriba las tasas reales que uses. El conversor las aplica al instante.</p>
+    </div>
+    <div class="setting-card glass">
+      <label>Sonidos</label>
+      <div class="row"><span>Clic, dinero y fanfarria</span><label class="switch"><input type="checkbox" id="sound-toggle" checked /><span class="slider"></span></label></div>
+    </div>
+    <div class="setting-card glass">
+      <label>Notificaciones personalizadas</label>
+      <div class="row"><span>Recordatorio diario</span><label class="switch"><input type="checkbox" id="notif-daily" checked /><span class="slider"></span></label></div>
+      <div class="row" style="margin-top:10px"><span>Hora</span><input type="time" id="notif-time" value="20:00" style="max-width:130px" /></div>
+      <div class="row" style="margin-top:10px"><span>Resumen semanal (domingo)</span><label class="switch"><input type="checkbox" id="notif-week" checked /><span class="slider"></span></label></div>
+      <div class="row" style="margin-top:10px"><span>Avisos de racha y metas</span><label class="switch"><input type="checkbox" id="notif-milestones" checked /><span class="slider"></span></label></div>
+      <button id="notif-test" class="btn btn-ghost w-full" style="margin-top:12px">🔔 Probar notificación</button>
+    </div>
+    <button id="reset-btn" class="btn btn-danger w-full">🗑️ Borrar todo y empezar de nuevo</button>
+    <p class="version">Ahorra+ v2.0 · hecho para Roniel 💚</p>
+  </div>
+
+  <!-- ====== ACTION SHEET (FAB) ====== -->
+  <div class="sheet hidden" id="sheet-quick">
+    <div class="sheet-backdrop" data-close="sheet-quick"></div>
+    <div class="sheet-card glass">
+      <div class="sheet-grip"></div>
+      <b class="sheet-title">¿Qué quieres hacer?</b>
+      <button class="quick-btn" data-quick="money">💰 Agregar dinero a una meta</button>
+      <button class="quick-btn" data-quick="income">🟢 Registrar ingreso</button>
+      <button class="quick-btn" data-quick="expense">🔴 Registrar gasto</button>
+      <button class="quick-btn" data-quick="goal">🎯 Nueva meta</button>
+      <button class="quick-btn" data-quick="calc">🧮 Calculadora de metas</button>
+      <button class="quick-btn" data-quick="chat">💬 Preguntar a la IA</button>
+    </div>
+  </div>
+
+  <!-- ====== MODAL: META ====== -->
+  <div class="modal hidden" id="m-goal">
+    <div class="modal-card glass">
+      <h3 id="m-goal-title">Nueva meta</h3>
       <form id="goal-form">
-        <label>¿Qué quieres ahorrar?</label>
-        <input type="text" id="goal-name" placeholder="Ej. iPhone nuevo 📱" maxlength="40" required />
-        <datalist id="goal-ideas"></datalist>
-        <label>¿Cuánto cuesta?</label>
-        <input type="number" id="goal-total" placeholder="15000" min="1" inputmode="decimal" required />
-        <label>¿Cuánto llevas ahorrado? (puedes dejarlo en 0)</label>
-        <input type="number" id="goal-saved" placeholder="0" min="0" value="0" inputmode="decimal" />
+        <label>¿Qué quieres lograr?</label>
+        <input type="text" id="goal-name" placeholder="Ej. Vacaciones en Punta Cana 🏝️" maxlength="40" required />
+        <label>Ícono</label>
+        <div class="emoji-chips" id="goal-emoji-chips"></div>
+        <label>Imagen (URL opcional)</label>
+        <input type="url" id="goal-img" placeholder="https://…" />
+        <label>¿Cuánto necesitas?</label>
+        <input type="number" id="goal-total" min="1" inputmode="decimal" required />
+        <label>¿Cuánto llevas ya?</label>
+        <input type="number" id="goal-saved" min="0" value="0" inputmode="decimal" />
         <label>Fecha límite (opcional)</label>
         <input type="date" id="goal-date" />
-        <button type="submit" id="modal-save" class="btn btn-primary">Guardar meta</button>
-        <button type="button" id="modal-cancel" class="btn btn-ghost">Cancelar</button>
+        <label class="share-toggle">
+          <input type="checkbox" id="goal-shared" /><span>Ahorro compartido 👥</span>
+        </label>
+        <div id="goal-shared-wrap" class="hidden">
+          <input type="text" id="goal-members" placeholder="Participantes separados por coma. Ej. Roniel, mamá, Lucía" maxlength="120" />
+        </div>
+        <button type="submit" class="btn btn-primary w-full">Guardar meta</button>
+        <button type="button" class="btn btn-ghost w-full" data-close="m-goal">Cancelar</button>
       </form>
     </div>
   </div>
 
-  <!-- Modal: agregar dinero -->
-  <div id="add-money-modal" class="modal hidden">
-    <div class="modal-card">
+  <!-- ====== MODAL: DINERO ====== -->
+  <div class="modal hidden" id="m-money">
+    <div class="modal-card glass">
       <h3 id="money-title">Agregar dinero</h3>
       <div class="money-quick">
-        <button data-amt="50">+$50</button>
-        <button data-amt="100">+$100</button>
-        <button data-amt="200">+$200</button>
-        <button data-amt="500">+$500</button>
+        <button data-amt="100">+$100</button><button data-amt="200">+$200</button>
+        <button data-amt="500">+$500</button><button data-amt="1000">+$1,000</button>
       </div>
-      <input type="number" id="money-amount" placeholder="O escribe una cantidad" min="1" inputmode="decimal" />
-      <button id="money-confirm" class="btn btn-primary">Agregar a mi meta 💰</button>
-      <button id="money-cancel" class="btn btn-ghost">Cancelar</button>
+      <input type="number" id="money-amount" placeholder="O escribe la cantidad" min="1" inputmode="decimal" />
+      <div id="money-member" class="hidden member-select">
+        <label>A nombre de quién</label>
+        <select id="money-member-sel"></select>
+      </div>
+      <button id="money-confirm" class="btn btn-primary w-full">Agregar 💚</button>
+      <button class="btn btn-ghost w-full" data-close="m-money">Cancelar</button>
+    </div>
+  </div>
+
+  <!-- ====== MODAL: RETIRO ====== -->
+  <div class="modal hidden" id="m-withdraw">
+    <div class="modal-card glass">
+      <h3>Retirar dinero 🏧</h3>
+      <p class="stat-help" id="withdraw-info"></p>
+      <input type="number" id="withdraw-amount" placeholder="Cantidad a retirar" min="1" inputmode="decimal" class="mt8" />
+      <button id="withdraw-confirm" class="btn btn-primary w-full">Retirar</button>
+      <button class="btn btn-ghost w-full" data-close="m-withdraw">Cancelar</button>
+    </div>
+  </div>
+
+  <!-- ====== MODAL: MOVIMIENTO ====== -->
+  <div class="modal hidden" id="m-tx">
+    <div class="modal-card glass">
+      <h3 id="tx-title">Registrar movimiento</h3>
+      <div class="segmented tiny" id="tx-kind">
+        <button class="seg active" data-kind="income">🟢 Ingreso</button>
+        <button class="seg" data-kind="expense">🔴 Gasto</button>
+      </div>
+      <label>Concepto</label>
+      <input type="text" id="tx-name" placeholder="Ej. Sueldo quincenal" maxlength="40" required />
+      <div class="hidden" id="tx-cat-wrap">
+        <label>Categoría</label>
+        <div class="emoji-chips" id="tx-cat-chips"></div>
+      </div>
+      <label>Cantidad</label>
+      <input type="number" id="tx-amount" min="1" inputmode="decimal" required />
+      <button type="button" id="tx-save" class="btn btn-primary w-full">Guardar movimiento</button>
+      <button class="btn btn-ghost w-full" data-close="m-tx">Cancelar</button>
+    </div>
+  </div>
+
+  <!-- ====== MODAL: CALCULADORA ====== -->
+  <div class="modal hidden" id="m-calc">
+    <div class="modal-card glass">
+      <h3>🧮 ¿Cuánto ahorrar al día?</h3>
+      <label>Usar una meta existente</label>
+      <select id="calc-goal"></select>
+      <div class="calc-custom hidden" id="calc-custom-wrap">
+        <label>Objetivo</label><input type="number" id="calc-target" placeholder="50000" inputmode="decimal" />
+        <label>Tiempo (días)</label><input type="number" id="calc-days" placeholder="90" min="1" inputmode="number" />
+      </div>
+      <label class="share-toggle"><input type="checkbox" id="calc-manual" /><span>Calcular desde cero (otra meta)</span></label>
+      <div id="calc-result" class="calc-result glass hidden">
+        <b id="calc-daily">$0</b><span>al día</span>
+        <div class="calc-more">
+          <div><b id="calc-weekly">$0</b><span>x semana</span></div>
+          <div><b id="calc-monthly">$0</b><span>x mes</span></div>
+        </div>
+        <p class="stat-help" id="calc-note"></p>
+      </div>
+      <button id="calc-go" class="btn btn-primary w-full">Calcular ✨</button>
+      <button class="btn btn-ghost w-full" data-close="m-calc">Cerrar</button>
+    </div>
+  </div>
+
+  <!-- ====== MODAL: PRESUPUESTO ====== -->
+  <div class="modal hidden" id="m-budget">
+    <div class="modal-card glass">
+      <h3>💵 Presupuesto mensual</h3>
+      <label>Presupuesto total</label>
+      <input type="number" id="budget-total" min="0" inputmode="decimal" />
+      <label>Hilo de por categoría</label>
+      <div id="budget-cats" class="budget-cats"></div>
+      <button id="budget-save" class="btn btn-primary w-full">Guardar presupuesto</button>
+      <button class="btn btn-ghost w-full" data-close="m-budget">Cancelar</button>
+    </div>
+  </div>
+
+  <!-- ====== MODAL: RECORDATORIO ====== -->
+  <div class="modal hidden" id="m-rem">
+    <div class="modal-card glass">
+      <h3>⏰ Nuevo recordatorio</h3>
+      <label>Mensaje</label>
+      <input type="text" id="rem-text" placeholder="Ej. Ahorrar $200 antes de dormir" maxlength="60" />
+      <label>Hora</label>
+      <input type="time" id="rem-time" value="20:00" />
+      <button id="rem-save" class="btn btn-primary w-full">Guardar recordatorio</button>
+      <button class="btn btn-ghost w-full" data-close="m-rem">Cancelar</button>
+    </div>
+  </div>
+
+  <!-- ====== MODAL: AVATAR ====== -->
+  <div class="modal hidden" id="m-avatar">
+    <div class="modal-card glass">
+      <h3>Elige tu avatar</h3>
+      <div class="emoji-grid" id="avatar-grid"></div>
+      <button class="btn btn-ghost w-full" data-close="m-avatar">Cerrar</button>
     </div>
   </div>
 
   <div id="toast" class="toast hidden"></div>
+  <div id="confetti-root"></div>
 
-  <script src="app.js"></script>
+  <script src="app.js?v=22"></script>
 </body>
 </html>

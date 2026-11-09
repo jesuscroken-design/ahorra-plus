@@ -9,3 +9,5 @@ node_modules/
 ghout.txt
 gherr.txt
 *.log
+
+.vercel

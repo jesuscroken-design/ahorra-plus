@@ -1,13 +1,13 @@
-"""Genera los iconos de Ahorra+ (logo premium negro + dorado) usando Pillow."""
+﻿"""Genera los iconos de Ahorra+ (logo premium negro + dorado) usando Pillow."""
 import math
 from PIL import Image, ImageDraw, ImageFilter
 
 SS = 2048          # sup Sample: dibujamos en 2048 y bajamos a 1024
 OUT = 1024
-GOLD_L = (247, 220, 138)
-GOLD_M = (232, 179, 75)
-GOLD_D = (150, 104, 28)
-GOLD_E = (110, 74, 18)
+GOLD_L = (120, 255, 195)
+GOLD_M = (16, 185, 129)
+GOLD_D = (5, 105, 70)
+GOLD_E = (3, 84, 55)
 BG_T = (40, 40, 46)
 BG_B = (7, 7, 9)
 INK = (16, 16, 20)
@@ -29,13 +29,13 @@ def make_logo(maskable=False):
     img = Image.composite(top_solid, bot_solid, grad)
     d = ImageDraw.Draw(img)
 
-    # ---- Halo radial dorado sutil detrás de la moneda
+    # ---- Halo radial dorado sutil detrÃ¡s de la moneda
     halo = Image.new("L", (S, S), 0)
     hd = ImageDraw.Draw(halo)
     cx, cy, r = S // 2, int(S * 0.53), int(S * 0.42)
     hd.ellipse([cx - r, cy - r, cx + r, cy + r], fill=70)
     halo = halo.filter(ImageFilter.GaussianBlur(S * 0.1))
-    gold_layer = Image.new("RGB", (S, S), (120, 90, 30))
+    gold_layer = Image.new("RGB", (S, S), (8, 110, 78))
     img = Image.composite(gold_layer, img, halo.point(lambda p: p))
     d = ImageDraw.Draw(img)
 
@@ -47,7 +47,7 @@ def make_logo(maskable=False):
     coin_dark = Image.new("RGB", (cr * 2, cr * 2), GOLD_D)
     coin_light = Image.new("RGB", (cr * 2, cr * 2), GOLD_L)
     coin = Image.composite(coin_light, coin_dark, rg)
-    #融合 intermedio: mezclar con dorado medio al 40%
+    #èžåˆ intermedio: mezclar con dorado medio al 40%
     coin = Image.blend(coin, Image.new("RGB", (cr * 2, cr * 2), GOLD_M), 0.42)
     mask = Image.new("L", (cr * 2, cr * 2), 0)
     ImageDraw.Draw(mask).ellipse([0, 0, cr * 2 - 1, cr * 2 - 1], fill=255)
@@ -88,7 +88,7 @@ def make_logo(maskable=False):
     d.polygon([tip, b1, b2], fill=INK)
     d.ellipse([x1-w//2, y1-w//2, x1+w//2, y1+w//2], fill=INK)
 
-    # ---- Monedas pequeñas apiladas abajo (referencia ahorro)
+    # ---- Monedas pequeÃ±as apiladas abajo (referencia ahorro)
     eo = int(S*0.045)  # offset entre monedas apiladas
     er = int(S*0.075)
     eb_x, eb_y = ccx - cr*0.62, ccy + cr*0.98
@@ -99,7 +99,7 @@ def make_logo(maskable=False):
                    eb_x + er - int(S*0.012), yy + er*0.62 - int(S*0.02)],
                   outline=(255, 240, 190), width=int(S*0.005))
 
-    # ---- Destellos ✦ blancos
+    # ---- Destellos âœ¦ blancos
     def sparkle(x, y, s, alpha):
         layer = Image.new("RGBA", (S, S), (0, 0, 0, 0))
         ld = ImageDraw.Draw(layer)
@@ -138,3 +138,4 @@ logo = make_logo(maskable=True)
 logo.resize((192, 192), Image.LANCZOS).save("icons/maskable-192.png")
 logo.resize((512, 512), Image.LANCZOS).save("icons/maskable-512.png")
 print("Iconos generados OK")
+
