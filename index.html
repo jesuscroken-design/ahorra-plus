@@ -16,7 +16,7 @@
   <link rel="apple-touch-icon" href="icons/icon-180.png" />
   <link rel="icon" type="image/png" href="icons/icon-192.png" />
 
-  <link rel="stylesheet" href="styles.css?v=23" />
+  <link rel="stylesheet" href="styles.css?v=24" />
 </head>
 <body>
 
@@ -31,6 +31,7 @@
   <div id="splash" class="splash">
     <img src="icons/icon-512.png" alt="" class="splash-logo" />
     <div class="splash-name">Ahorra<span>+</span></div>
+    <div class="splash-credit">creada por <b>jesuscroken</b></div>
   </div>
 
   <!-- ====== BIENVENIDA ====== -->
@@ -101,6 +102,9 @@
           </div>
         </div>
 
+        <!-- Fondo de emergencia (mini card) -->
+        <div class="card widget-daily glass" id="ef-card"></div>
+
         <!-- Widget de ahorro diario -->
         <div class="card widget-daily glass" id="widget-daily">
           <div class="ring-wrap">
@@ -125,6 +129,9 @@
           <span class="ai-open">›</span>
         </div>
 
+        <!-- Card de desafíos -->
+        <div class="card glass" id="ch-card"></div>
+
         <div class="section-head">
           <h2>Mis metas</h2>
           <button class="btn-link" id="go-goals">Ver todas ›</button>
@@ -141,13 +148,24 @@
       <!-- ============ VISTA: METAS ============ -->
       <section class="view hidden" id="view-goals">
         <div class="segmented">
-          <button class="seg active" data-seg="goals">🎯 Mis metas</button>
+          <button class="seg active" data-seg="goals">🎯 Metas</button>
+          <button class="seg" data-seg="fin">💳 Deudas</button>
           <button class="seg" data-seg="cal">📅 Calendario</button>
-          <button class="seg" data-seg="rem">⏰ Recordatorios</button>
+          <button class="seg" data-seg="rem">⏰ Notas</button>
         </div>
 
         <div id="seg-goals" class="segpane">
           <div id="goals-list" class="goal-list"></div>
+        </div>
+
+        <div id="seg-fin" class="segpane hidden">
+          <div id="ef-block"></div>
+          <div class="section-head"><h2>💳 Deudas y tarjetas</h2><button class="btn-link" id="debt-add">＋ Nueva</button></div>
+          <div id="debts-sum" class="stat-help" style="margin-bottom:8px"></div>
+          <div id="debts-list"></div>
+          <div class="section-head"><h2>🔁 Gastos recurrentes</h2><button class="btn-link" id="recur-add">＋ Nuevo</button></div>
+          <div id="recur-sum" class="stat-help" style="margin-bottom:8px"></div>
+          <div id="recur-list"></div>
         </div>
 
         <div id="seg-cal" class="segpane hidden">
@@ -171,11 +189,29 @@
 
       <!-- ============ VISTA: ESTADÍSTICAS ============ -->
       <section class="view hidden" id="view-stats">
-        <div class="section-head"><h2>📊 Estadísticas</h2><button class="btn-link" id="export-btn">⬇️ Exportar</button></div>
+        <div class="section-head"><h2>📊 Estadísticas</h2><button class="btn-link" id="export-btn">⬇️ Exportar</button><button class="btn-link" id="pdf-btn">📄 PDF</button></div>
 
         <div class="card glass">
           <div class="sechead2"><b>Ahorro · últimas 8 semanas</b><span class="stat-help" id="bar-legend-total"></span></div>
           <canvas id="chart-weeks" height="190"></canvas>
+        </div>
+
+        <div class="card glass">
+          <div class="sechead2"><b>Ingresos vs gastos · comparación mensual</b></div>
+          <canvas id="chart-months" height="180"></canvas>
+          <div id="cmp-legend" class="cmp-legend"></div>
+          <p class="stat-help" id="cmp-help" style="margin-top:6px"></p>
+        </div>
+
+        <div class="row2">
+          <div class="card glass">
+            <div class="sechead2"><b>Patrimonio acumulado · 12 meses</b></div>
+            <canvas id="chart-net" height="120"></canvas>
+          </div>
+          <div class="card glass">
+            <div class="sechead2"><b>Evolución de las deudas</b></div>
+            <canvas id="chart-debt" height="120"></canvas>
+          </div>
         </div>
 
         <div class="row2">
@@ -278,18 +314,6 @@
 
         <div class="section-head"><h2>🏅 Logros</h2><span class="stat-help" id="ach-progress"></span></div>
         <div id="ach-grid" class="ach-grid"></div>
-
-        <div class="section-head"><h2>👥 Grupo en vivo</h2><span class="stat-help">P2P sin servidores</span></div>
-        <div class="card glass group-cta" id="group-open">
-          <div class="group-cta-main">
-            <span class="group-ico">💬</span>
-            <div>
-              <b>Crea o únete a un grupo de ahorro</b>
-              <span class="stat-help" id="group-cta-sub">Chatea en vivo y comparte el progreso de tus metas con familia o amigos</span>
-            </div>
-          </div>
-          <span class="ai-open">›</span>
-        </div>
       </section>
     </main>
 
@@ -335,29 +359,6 @@
     </form>
   </div>
 
-  <div class="panel" id="panel-group">
-    <header class="panel-head">
-      <button class="icon-btn back" data-close="panel-group">‹</button>
-      <div><h2>Grupo de ahorro 👥</h2><span class="stat-help" id="gp-status">Desconectado</span></div>
-      <span class="ai-dot" id="gp-dot" style="opacity:.35"></span>
-    </header>
-    <div class="setting-card glass" id="gp-form">
-      <label>Código del grupo</label>
-      <div class="row">
-        <input type="text" id="gp-code" placeholder="Ej. ahorra-familia-2026" maxlength="40" autocomplete="off" />
-        <button id="gp-join" class="btn btn-sm btn-primary">Entrar</button>
-      </div>
-      <p class="stat-help mt8">Compártele <b>el mismo código</b> a quienes quieras (cámbialo si quieres privacidad). La conexión es directa entre ustedes, P2P vía relays Nostr — no pasa por ningún servidor nuestro.</p>
-    </div>
-    <div id="gp-chat" class="chat" style="min-height:220px"></div>
-    <div id="gp-peers" class="gp-peers"></div>
-    <form id="gp-msgform" class="chat-form glass hidden">
-      <input type="text" id="gp-input" placeholder="Mensaje al grupo…" autocomplete="off" maxlength="300" />
-      <button type="submit" class="btn btn-primary send">➜</button>
-    </form>
-    <button id="gp-leave" class="btn btn-danger w-full mt8 hidden">🚪 Salir del grupo</button>
-  </div>
-
   <div class="panel" id="panel-settings">
     <header class="panel-head">
       <button class="icon-btn back" data-close="panel-settings">‹</button>
@@ -401,8 +402,29 @@
       <div class="row" style="margin-top:10px"><span>Avisos de racha y metas</span><label class="switch"><input type="checkbox" id="notif-milestones" checked /><span class="slider"></span></label></div>
       <button id="notif-test" class="btn btn-ghost w-full" style="margin-top:12px">🔔 Probar notificación</button>
     </div>
+    <div class="setting-card glass">
+      <label>🔒 Seguridad</label>
+      <p class="stat-help" id="pin-help">Sin PIN — configura uno para bloquear la app</p>
+      <div class="row" style="margin-top:10px"><input type="text" id="pin-old" inputmode="numeric" placeholder="PIN actual (si hay)" maxlength="4" style="width:46%" /><input type="password" id="pin-new" inputmode="numeric" placeholder="Nuevo PIN (4 dígitos)" maxlength="4" style="width:52%" /></div>
+      <div class="row" style="margin-top:10px">
+        <button id="pin-save" class="btn btn-sm btn-primary" style="flex:1">Guardar PIN</button>
+        <button id="pin-del" class="btn btn-sm btn-ghost">Quitar PIN</button>
+      </div>
+      <div class="row" style="margin-top:12px"><span>Bloquear al abrir la app</span><label class="switch"><input type="checkbox" id="lock-toggle" /><span class="slider"></span></label></div>
+      <div class="row" style="margin-top:10px"><span>Modo privado (oculta montos) 🙈</span><label class="switch"><input type="checkbox" id="priv-toggle" /><span class="slider"></span></label></div>
+      <button id="lock-btn" class="btn btn-ghost w-full" style="margin-top:12px">🔐 Bloquear ahora</button>
+    </div>
+    <div class="setting-card glass">
+      <label>💾 Respaldo de tus datos</label>
+      <p class="stat-help">Guarda un archivo .json con TODO (metas, deudas, movimientos, ajustes) y restáuralo en cualquier otro teléfono.</p>
+      <div class="row" style="margin-top:10px">
+        <button id="backup-export" class="btn btn-sm btn-primary" style="flex:1">⬇️ Descargar respaldo</button>
+        <button id="backup-import" class="btn btn-sm btn-ghost">⬆️ Restaurar</button>
+        <input type="file" id="backup-file" accept="application/json,.json" class="hidden-file" />
+      </div>
+    </div>
     <button id="reset-btn" class="btn btn-danger w-full">🗑️ Borrar todo y empezar de nuevo</button>
-    <p class="version">Ahorra+ v2.0 · hecho para Roniel 💚</p>
+    <p class="version">Ahorra+ v3.0 · hecho para Roniel 💚 · creado por jesuscroken</p>
   </div>
 
   <!-- ====== ACTION SHEET (FAB) ====== -->
@@ -505,19 +527,38 @@
     </div>
   </div>
 
-  <!-- ====== MODAL: CALCULADORA ====== -->
+  <!-- ====== MODAL: CALCULADORA / SIMULADOR ====== -->
   <div class="modal hidden" id="m-calc">
     <div class="modal-card glass">
-      <h3>🧮 ¿Cuánto ahorrar al día?</h3>
-      <label>Usar una meta existente</label>
-      <select id="calc-goal"></select>
-      <div class="calc-custom hidden" id="calc-custom-wrap">
-        <label>Objetivo</label><input type="number" id="calc-target" placeholder="50000" inputmode="decimal" />
-        <label>Tiempo (días)</label><input type="number" id="calc-days" placeholder="90" min="1" inputmode="number" />
+      <div class="segmented tiny" id="calc-seg">
+        <button class="seg active" data-mode="calc">🧮 Calc</button>
+        <button class="seg" data-mode="sim">🚀 Simulador</button>
       </div>
-      <label class="share-toggle"><input type="checkbox" id="calc-manual" /><span>Calcular desde cero (otra meta)</span></label>
+      <div id="calc-goal-view">
+        <label>Usar una meta existente</label>
+        <select id="calc-goal"></select>
+        <div class="calc-custom hidden" id="calc-custom-wrap">
+          <label>Objetivo</label><input type="number" id="calc-target" placeholder="50000" inputmode="decimal" />
+          <label>Tiempo (días)</label><input type="number" id="calc-days" placeholder="90" min="1" inputmode="number" />
+        </div>
+        <label class="share-toggle"><input type="checkbox" id="calc-manual" /><span>Calcular desde cero (otra meta)</span></label>
+      </div>
+      <div id="sim-target-wrap" class="hidden">
+        <label>¿Cuánto quieres lograr?</label><input type="number" id="sim-target" placeholder="Ej. 50000" inputmode="decimal" />
+      </div>
+      <div id="sim-wrap" class="hidden">
+        <label>Ahorro por período</label>
+        <div class="spin-row">
+          <input type="number" id="sim-amt" placeholder="Ej. 500" inputmode="decimal" />
+          <select id="sim-freq">
+            <option value="d">cada día</option>
+            <option value="w">cada semana</option>
+            <option value="m" selected>cada mes</option>
+          </select>
+        </div>
+      </div>
       <div id="calc-result" class="calc-result glass hidden">
-        <b id="calc-daily">$0</b><span>al día</span>
+        <b id="calc-daily">$0</b><span id="calc-big-label">al día</span>
         <div class="calc-more">
           <div><b id="calc-weekly">$0</b><span>x semana</span></div>
           <div><b id="calc-monthly">$0</b><span>x mes</span></div>
@@ -560,13 +601,110 @@
     <div class="modal-card glass">
       <h3>Elige tu avatar</h3>
       <div class="emoji-grid" id="avatar-grid"></div>
-      <button class="btn btn-ghost w-full" data-close="m-avatar">Cerrar</button>
+      <div class="photo-row" style="margin-top:12px">
+        <input type="file" id="avatar-file" accept="image/*" class="hidden-file" />
+        <button type="button" id="avatar-photo-btn" class="btn btn-primary btn-sm" style="flex:1">📷 Foto de mi galería</button>
+        <button type="button" id="avatar-photo-clear" class="btn btn-ghost btn-sm" title="Quitar foto">🗑️</button>
+      </div>
+      <p class="stat-help" style="margin-top:6px">Tu foto se recorta a círculo y se guarda solo en tu dispositivo 🔒</p>
+      <button class="btn btn-ghost w-full" data-close="m-avatar" style="margin-top:10px">Cerrar</button>
+    </div>
+  </div>
+
+  <!-- ====== MODAL: FONDO DE EMERGENCIA ====== -->
+  <div class="modal hidden" id="m-ef">
+    <div class="modal-card glass">
+      <h3>🚑 Fondo de emergencia</h3>
+      <label>Meta del fondo (objetivo)</label>
+      <input type="number" id="ef-target" placeholder="Ej. 30000" inputmode="decimal" min="0" />
+      <label>Aporte inicial</label>
+      <input type="number" id="ef-start" placeholder="Ej. 500" inputmode="decimal" min="0" />
+      <button id="ef-save" class="btn btn-primary w-full">Guardar fondo 💚</button>
+      <button class="btn btn-ghost w-full" data-close="m-ef">Cancelar</button>
+    </div>
+  </div>
+
+  <!-- ====== MODAL: DEUDA / TARJETA ====== -->
+  <div class="modal hidden" id="m-debt">
+    <div class="modal-card glass">
+      <h3 id="m-debt-title">💳 Nueva deuda</h3>
+      <form id="debt-form">
+        <label>Tipo</label>
+        <div class="segmented tiny" id="debt-kind-seg">
+          <button type="button" class="seg active" data-kind="loan">🏦 Préstamo</button>
+          <button type="button" class="seg" data-kind="card">💳 Tarjeta</button>
+        </div>
+        <input type="hidden" id="debt-kind" value="loan" />
+        <label>Nombre</label>
+        <input type="text" id="debt-name" placeholder="Ej. Moto · Banco Coop" maxlength="40" required />
+        <label>¿Cuánto en total?</label>
+        <input type="number" id="debt-total" min="1" inputmode="decimal" required />
+        <label>¿Cuánto llevas pagado?</label>
+        <input type="number" id="debt-paid" min="0" value="0" inputmode="decimal" />
+        <label>Cuota mensual (opcional)</label>
+        <input type="number" id="debt-payment" min="0" placeholder="Ej. 2000" inputmode="decimal" />
+        <div id="debt-limit-wrap" class="hidden">
+          <label>Límite de la tarjeta</label>
+          <input type="number" id="debt-limit" min="0" placeholder="Ej. 50000" inputmode="decimal" />
+        </div>
+        <label>Cobro el día del mes</label>
+        <input type="number" id="debt-day" min="1" max="28" value="5" inputmode="number" />
+        <button type="submit" class="btn btn-primary w-full">Guardar 💳</button>
+        <button type="button" class="btn btn-ghost w-full" data-close="m-debt">Cancelar</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- ====== MODAL: PAGO DE DEUDA ====== -->
+  <div class="modal hidden" id="m-pay">
+    <div class="modal-card glass">
+      <h3>💰 Registrar pago</h3>
+      <p class="stat-help" id="pay-info"></p>
+      <input type="number" id="pay-amount" placeholder="Cantidad del pago" min="1" inputmode="decimal" />
+      <label class="share-toggle" style="margin-top:10px">
+        <input type="checkbox" id="pay-expense" /><span>También registrar como gasto del mes 🔴</span>
+      </label>
+      <button id="pay-save" class="btn btn-primary w-full">Registrar pago 💚</button>
+      <button class="btn btn-ghost w-full" data-close="m-pay">Cancelar</button>
+    </div>
+  </div>
+
+  <!-- ====== MODAL: GASTO RECURRENTES ====== -->
+  <div class="modal hidden" id="m-recur">
+    <div class="modal-card glass">
+      <h3>🔁 Nuevo gasto recurrente</h3>
+      <label>Nombre</label>
+      <input type="text" id="recur-name" placeholder="Ej. Internet StarLink" maxlength="40" required />
+      <label>Categoría</label>
+      <select id="recur-cat"><option value="casa">🏠 Casa</option><option value="comida">🍔 Comida</option><option value="transporte">🚌 Transporte</option><option value="salud">🏥 Salud</option><option value="ocio">🎮 Ocio</option><option value="otros">📦 Otros</option></select>
+      <label>Monto mensual</label>
+      <input type="number" id="recur-amt" min="1" inputmode="decimal" placeholder="Ej. 800" />
+      <label>Día del cobro</label>
+      <input type="number" id="recur-day" min="1" max="28" value="5" inputmode="number" />
+      <button id="recur-save" class="btn btn-primary w-full">Añadir gasto fijo 🔁</button>
+      <button class="btn btn-ghost w-full" data-close="m-recur">Cancelar</button>
+    </div>
+  </div>
+
+  <!-- ====== MODAL: BLOQUEO PIN ====== -->
+  <div class="modal hidden" id="m-lock">
+    <div class="modal-card glass lock-card">
+      <h3 id="lock-title-text">🔒 App bloqueada</h3>
+      <p class="stat-help">Introduce tu PIN de 4 dígitos</p>
+      <div class="pin-dots" id="pin-dots"></div>
+      <p class="stat-help hidden" id="pin-wrong" style="color:var(--red)">PIN incorrecto, prueba otra vez ⚠️</p>
+      <div class="keypad" id="keypad">
+        <button data-key="1">1</button><button data-key="2">2</button><button data-key="3">3</button>
+        <button data-key="4">4</button><button data-key="5">5</button><button data-key="6">6</button>
+        <button data-key="7">7</button><button data-key="8">8</button><button data-key="9">9</button>
+        <button data-key="x">✕</button><button data-key="0">0</button><button data-key="back">⌫</button>
+      </div>
     </div>
   </div>
 
   <div id="toast" class="toast hidden"></div>
   <div id="confetti-root"></div>
 
-  <script src="app.js?v=23"></script>
+  <script src="app.js?v=24"></script>
 </body>
 </html>

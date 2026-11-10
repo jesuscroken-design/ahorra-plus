@@ -8,7 +8,7 @@
 "use strict";
 
 /* ================== ESTADO Y MIGRACIÓN ================== */
-const KEY = "ahorra_v2", KEY_OLD = "ahorra_plus_v1";
+const KEY = "ahorra_v3", KEY_V2 = "ahorra_v2", KEY_OLD = "ahorra_plus_v1";
 const CATS = { comida:"🍔", transporte:"🚌", casa:"🏠", salud:"🏥", ocio:"🎮", otros:"📦" };
 const GOAL_EMOJIS = ["🎯","🏝️","📱","💻","🚗","🏠","🎓","💍","🎮","🎸","⌚","🎁","🏥","📷","👕","🚢"];
 const AVATARS = ["🙂","😎","🤓","🦸","🐯","🐼","🦊","🐸","🦁","🐨","🦄","🤖","🐷","💃","🧜","🚀"];
@@ -34,7 +34,8 @@ let S;
 
 function load(){
   try{ S = JSON.parse(localStorage.getItem(KEY) || "null"); }catch{ S = null; }
-  if(S){ if(!S.gb) S.gb = { roundUp:false, step:50, goal:"" }; return; }
+  if(!S){ try{ S = JSON.parse(localStorage.getItem(KEY_V2) || "null"); }catch{ S = null; } }
+  if(S){ migrate(); return; }
   const o = (()=>{ try{ return JSON.parse(localStorage.getItem(KEY_OLD) || "null") || {}; }catch{ return {}; } })();
   S = {
     owner:o.owner || null, since:today(), avatar:"🙂",
@@ -52,6 +53,48 @@ function load(){
     gb:{ roundUp:false, step:50, goal:"" },
     exportedOnce:false, usedConv:false,
   };
+  migrate();
+  save();
+}
+/* Migración idempotente v2 → v3: rellena campos nuevos, deduplica
+   metas/movimientos por id y limpia restos del módulo de grupos.
+   La llave ahorra_v2 se conserva intacta como respaldo. */
+function migrate(){
+  if(!S.gb || typeof S.gb !== "object") S.gb = { roundUp:false, step:50, goal:"" };
+  delete S.gb.code; delete S.gb.anon; delete S.gb.log;
+  if(!Array.isArray(S.goals)) S.goals = S.goals ? [S.goals] : [];
+  if(!Array.isArray(S.income)) S.income = [];
+  if(!Array.isArray(S.expenses)) S.expenses = [];
+  if(!Array.isArray(S.reminders)) S.reminders = [];
+  if(!S.budget || typeof S.budget !== "object") S.budget = { total:0, cats:{} };
+  if(!S.budget.cats || typeof S.budget.cats !== "object") S.budget.cats = {};
+  if(!S.notifs || typeof S.notifs !== "object") S.notifs = { daily:true, time:"20:00", weekly:true, milestones:true };
+  if(!S.ach || typeof S.ach !== "object" || Array.isArray(S.ach)) S.ach = {};
+  // dedup por id
+  const seen = new Set(), uniq = [];
+  S.goals.forEach(g=>{
+    if(!g || typeof g !== "object" || !g.id || seen.has(g.id)) return;
+    seen.add(g.id);
+    if(g.done !== true) g.done = !!g.done;
+    if(!Array.isArray(g.history)) g.history = (g.history||[]).filter(h=>h&&h.d&&isFinite(h.amt));
+    if(!g.contribs || typeof g.contribs !== "object") g.contribs = {};
+    if(!("shared" in g)) g.shared = false;
+    if(!Array.isArray(g.members)) g.members = [S.owner].filter(Boolean);
+    uniq.push(g);
+  });
+  S.goals = uniq;
+  // v3 · finanzas reales
+  if(!Array.isArray(S.debts)) S.debts = [];
+  if(!Array.isArray(S.recurring)) S.recurring = [];
+  if(!S.challenges || typeof S.challenges !== "object" || Array.isArray(S.challenges)) S.challenges = {};
+  if(!S.chalLog || typeof S.chalLog !== "object" || Array.isArray(S.chalLog)) S.chalLog = {};
+  // v3 · seguridad
+  if(!S.security || typeof S.security !== "object" || Array.isArray(S.security)) S.security = {};
+  if(typeof S.security.pinHash !== "string") S.security.pinHash = "";
+  if(!("lock" in S.security)) S.security.lock = false;
+  if(!("privacy" in S.security)) S.security.privacy = false;
+  if(!("avatarImg" in S)) S.avatarImg = "";
+  S.avatar = S.avatar || "🙂";
   save();
 }
 function save(){ try{ localStorage.setItem(KEY, JSON.stringify(S)); }catch{} }
@@ -120,10 +163,13 @@ const balance = () => S.income.reduce((a,t)=>a+t.amt,0) - S.expenses.reduce((a,t
 const mIncome = mk => S.income.filter(t=>inMonth(t.d,mk)).reduce((a,t)=>a+t.amt,0);
 const mExpenses = mk => S.expenses.filter(t=>inMonth(t.d,mk)).reduce((a,t)=>a+t.amt,0);
 const mSavings = mk => S.goals.reduce((a,g)=>a+(g.history||[]).filter(h=>h.amt>0 && inMonth(h.d,mk)).reduce((x,h)=>x+h.amt,0),0);
+/* Fondo de emergencia: meta especial marcada g.ef — vive en su propia card */
+const EF = () => S.goals.find(g=>g.ef) || null;
+const visGoals = () => S.goals.filter(g=>!g.ef);
 
 const daysOf = g => g.deadline ? Math.max(1, Math.ceil((new Date(g.deadline+"T12:00") - new Date(today()+"T12:00"))/86400000)) : 30;
 function dailySuggest(){
-  const act = S.goals.filter(g=>!g.done);
+  const act = visGoals().filter(g=>!g.done);
   if(!act.length) return { amt:0, goal:null };
   const g = act.sort((a,b)=>daysOf(a)-daysOf(b))[0];
   return { amt: Math.max(1, Math.ceil((g.total - g.saved)/Math.max(3, Math.min(daysOf(g), 30)))), goal:g };
@@ -167,14 +213,14 @@ function go(view){
   if(active && pill) pill.style.left = (active.offsetLeft + active.offsetWidth/2 - 18) + "px";
   curView = view; SFX.swipe();
   window.scrollTo({ top:0 });
-  if(view === "stats") drawStatsCharts();
+  if(view === "stats"){ drawStatsCharts(); try{ drawMonthsChart(); drawNetChart(); }catch{} }
   if(view === "profile") renderProfile();
 }
 
 /* ================== CIERRE GLOBAL ================== */
 function closeAll(){
   ["panel-activity","panel-chat","panel-settings"].forEach(p => $(p).classList.remove("open"));
-  ["m-goal","m-money","m-withdraw","m-tx","m-calc","m-budget","m-rem","m-avatar"].forEach(m => $(m).classList.add("hidden"));
+  ["m-goal","m-money","m-withdraw","m-tx","m-calc","m-budget","m-rem","m-avatar","m-ef","m-debt","m-pay","m-recur"].forEach(m => $(m).classList.add("hidden"));
   $("sheet-quick").classList.add("hidden");
 }
 document.addEventListener("click", e => {
@@ -228,7 +274,7 @@ function showTip(x,y,html){
 function drawBars(cv, vals, labels, tipFor){
   const P = prep(cv); if(!P) return;
   const { c, w, h } = P;
-  const max = Math.max(...vals, 1), pad = 10;
+  const max = Math.max(...vals.filter(isFinite), 1), pad = 10;
   let hover = -1;
   function draw(){
     c.clearRect(0,0,w,h);
@@ -259,6 +305,7 @@ function drawLine(cv, vals){
   const { c, w, h } = P;
   if(!vals.length) return;
   const max = Math.max(...vals, 1), pad = 6, n = vals.length;
+  if(!isFinite(max)){ return; }
   const X = i => pad + i*((w-pad*2)/Math.max(n-1,1)), Y = v => h-4-(v/max)*(h-10);
   c.clearRect(0,0,w,h);
   c.strokeStyle = cssVar("--ac"); c.lineWidth = 2.2; c.lineJoin="round"; c.lineCap="round";
@@ -296,7 +343,8 @@ function drawDonut(cv, segs){
   const { c, w, h } = P;
   const R = Math.min(w,h)/2-10, cx=w/2, cy=h/2, total = segs.reduce((a,s)=>a+s.value,0);
   const BW = 17;
-  if(!total){
+  if(!isFinite(total)) segs.forEach((s,i)=>{ if(!isFinite(s.value)) s.value = 0; });
+  if(!total || !isFinite(total)){
     c.clearRect(0,0,w,h);
     c.fillStyle = "rgba(140,160,150,.6)"; c.font = "12px -apple-system"; c.textAlign = "center";
     c.fillText("Sin gastos aún este mes", cx, cy);
@@ -311,8 +359,11 @@ function drawDonut(cv, segs){
     a0 = a1;
   });
   const sel = segs[donutSel] || { label:"Total", value:total };
-  c.fillStyle = cssVar("--text"); c.font = "800 15px -apple-system"; c.textAlign = "center";
-  c.fillText(fmt(sel.value), cx, cy+1);
+  c.fillStyle = cssVar("--text");
+  const big = Math.abs(sel.value) >= 1e5;
+  c.font = big ? "800 13px -apple-system" : "800 15px -apple-system";
+  c.textAlign = "center";
+  c.fillText(fmtK(sel.value), cx, cy+1);
   c.fillStyle = "rgba(140,160,150,.9)"; c.font = "10.5px -apple-system";
   c.fillText(sel.label, cx, cy+16);
   cv.onpointerdown = e => {
@@ -342,7 +393,7 @@ function renderDashboard(){
   const bal = mIncome(mk) - mExpenses(mk) - mSavings(mk);
   $("m-balance").textContent = fmt(bal);
   $("balance-help").textContent = bal >= 0 ? "Disponible para ahorrar 💚" : "Ojo: gastas más de lo que ingresa ⚠️";
-  $("g-count").textContent = S.goals.filter(g=>!g.done).length;
+  $("g-count").textContent = visGoals().filter(g=>!g.done).length;
   $("g-done").textContent = goalsDoneCount() ? ` · ${goalsDoneCount()} hechas ✅` : "";
   $("streak-mini").textContent = `🔥 ${streakCalc()} días`;
   $("top-balance").textContent = `Patrimonio ${fmt(totalSaved()+Math.max(0,balance()))}`;
@@ -362,9 +413,9 @@ function renderDashboard(){
 
   // preview metas
   const pv = $("goals-preview"); pv.innerHTML = "";
-  const act = S.goals.filter(g=>!g.done);
+  const act = visGoals().filter(g=>!g.done);
   if(!S.goals.length) pv.innerHTML = `<div class="empty"><b>🎯</b>Crea tu primera meta con el botón ＋</div>`;
-  else if(!act.length) pv.innerHTML = `<div class="empty"><b>🏆</b>¡Todas tus metas cumplidas!<br>Facturamos una nueva 💚</div>`;
+  else if(!act.length) pv.innerHTML = `<div class="empty"><b>🏆</b>¡Todo al código — metas al día!<br>Facturamos una nueva 💚</div>`;
   else act.slice(0,2).forEach(g => pv.appendChild(goalCardHTML(g, true)));
 
   renderPreviewTx();
@@ -445,10 +496,11 @@ function memberBars(g){
 }
 function renderGoals(){
   const list = $("goals-list"); list.innerHTML = "";
-  if(!S.goals.length) list.innerHTML = `<div class="empty"><b>🎯</b>Sin metas aún.<br> Usa el ＋ para crear la primera</div>`;
-  S.goals.forEach(g => list.appendChild(goalCardHTML(g)));
+  const vgoals = visGoals();
+  if(!vgoals.length) list.innerHTML = `<div class="empty"><b>🎯</b>Sin metas aún.<br> Usa el ＋ para crear la primera</div>`;
+  vgoals.forEach(g => list.appendChild(goalCardHTML(g)));
   const gb = $("goal-bars"); gb.innerHTML = "";
-  S.goals.forEach(g=>{
+  vgoals.forEach(g=>{
     const pct = Math.min(100, Math.round(g.saved/Math.max(g.total,1)*100));
     gb.innerHTML += `<div class="gbar" style="margin-bottom:10px">
       <div class="rowline" style="display:flex;justify-content:space-between;font-size:11.5px;font-weight:700;margin-bottom:4px">
@@ -548,7 +600,7 @@ function openMoney(){
   const gs = $("money-goal-sel") || (() => {
     const s = document.createElement("select"); s.id = "money-goal-sel"; s.className = "mt8";
     s.addEventListener("change", ()=>{
-      T = S.goals.filter(x=>!x.done)[s.selectedIndex];
+      T = todo[s.selectedIndex];
       pendingGoal = T.id; $("money-title").innerHTML = `${T.emoji} ${esc(T.name)}`;
       const m2 = [...new Set([S.owner, ...(T.members||[])])];
       if(T.shared && m2.length>1){ $("money-member").classList.remove("hidden"); $("money-member-sel").innerHTML = m2.map(m=>`<option>${esc(m)}</option>`).join(""); }
@@ -557,7 +609,7 @@ function openMoney(){
     return s;
   })();
   if(!gs.parentNode) $("money-title").after(gs);
-  const todo = S.goals.filter(x=>!x.done);
+  const todo = S.goals.filter(x=>!x.done && (!x.ef || x.id===pendingGoal));
   gs.innerHTML = todo.map(x=>`<option>${x.emoji} ${esc(x.name)}</option>`).join("");
   gs.selectedIndex = Math.max(0, todo.findIndex(x=>x.id===pendingGoal));
   $("m-money").classList.remove("hidden");
@@ -651,7 +703,7 @@ function renderGB(){
   wrap.checked = !!S.gb.roundUp;
   $("gb-goal-wrap").classList.toggle("hidden", !S.gb.roundUp);
   const sel = $("gb-goal");
-  const act = S.goals.filter(g=>!g.done);
+  const act = visGoals().filter(g=>!g.done);
   sel.innerHTML = act.map(g=>`<option value="${g.id}">${g.emoji} ${esc(g.name)}</option>`).join("") || "<option>Sin metas activas</option>";
   if(S.gb.goal && act.some(g=>g.id===S.gb.goal)) sel.value = S.gb.goal;
   const R = gbCalc();
@@ -674,7 +726,7 @@ function renderGB(){
     : "";
 }
 function applyRoundUp(diff){
-  const g = S.goals.find(x=>x.id===S.gb.goal) || S.goals.filter(x=>!x.done)[0];
+  const g = S.goals.find(x=>x.id===S.gb.goal) || visGoals().filter(x=>!x.done)[0];
   if(!g){ return false; }
   g.saved += diff;
   g.history = g.history || [];
@@ -698,15 +750,23 @@ function renderCalendar(){
   let dias = 0;
   for(let i=1;i<=dim;i++){
     const k = `${calMonth}-${String(i).padStart(2,"0")}`;
-    const saved = S.goals.reduce((a,g)=>a+(g.history||[]).filter(h=>h.d===k && h.amt>0).reduce((x,h)=>x+h.amt,0),0);
+    const fin = dayFinancials(k);
+    const saved = fin.sav;
+    const due = calMonth === monthKey() ? dueForDay(i) : [];
     const e = document.createElement("div");
-    e.className = "cal-day" + (saved ? " saved" : "") + (k === today() ? " today" : k > today() ? " future" : " past");
+    e.className = "cal-day" + (saved ? " saved" : "") + (fin.inc.length ? " has-inc" : "") + (fin.exp.length ? " has-exp" : "") + (due.length ? " due" : "") + (k === today() ? " today" : k > today() ? " future" : " past");
     e.textContent = i;
-    if(saved){ const dot = document.createElement("i"); dot.style.cssText = "position:absolute;bottom:3px;width:4px;height:4px;border-radius:50%;background:#04120c"; e.appendChild(dot); }
+    if(due.length){ const d = document.createElement("i"); d.className = "cal-due"; e.appendChild(d); }
+    else if(saved){ const dot = document.createElement("i"); dot.style.cssText = "position:absolute;bottom:3px;width:4px;height:4px;border-radius:50%;background:#04120c"; e.appendChild(dot); }
     e.addEventListener("click", ()=>{
-      if(saved) toast(`${dfmt(k)}: ahorraste ${fmt(saved)} 🐷`);
+      const bits = [];
+      if(fin.inc.length) bits.push(`ingresos 🟢 ${fmtK(fin.inc.reduce((a,t)=>a+t.amt,0))}`);
+      if(fin.exp.length) bits.push(`gastos 🔴 ${fmtK(fin.exp.reduce((a,t)=>a+t.amt,0))}`);
+      if(saved) bits.push(`ahorraste ${fmt(saved)} 🐷`);
+      if(due.length) bits.push(`vencimientos 🔔 ${due.map(d=>`${d.name} ${fmtK(d.amt)}`).join(", ")}`);
+      if(bits.length) toast(`${dfmt(k)}: ${bits.join(" · ")}`);
       else if(k === today()){ pendingGoal = (dailySuggest().goal||{}).id; openMoney(); }
-      else toast("Sin depósitos ese día");
+      else toast("Día sin movimientos");
     });
     grid.appendChild(e);
     if(saved) dias++;
@@ -784,8 +844,8 @@ function drawStatsCharts(){
     vals.push(s); labels.push("S"+(8-i)); total += s;
   }
   const cv = $("chart-weeks");
-  if(cv){ $("bar-legend-total").textContent = "Total " + fmt(total);
-    drawBars(cv, vals, labels, i => `Semana ${labels[i]}: <span style="color:var(--ac)">${fmt(vals[i])}</span>`); }
+  if(cv){ $("bar-legend-total").textContent = "Total " + fmtK(total);
+    drawBars(cv, vals, labels, i => `Semana ${labels[i]}: <span style="color:var(--ac)">${fmtK(vals[i])}</span>`); }
   renderCats(); renderBudget(); renderGoals();
 }
 function renderCats(){
@@ -860,7 +920,14 @@ function renderProfile(){
   const grid = $("ach-grid");
   grid.innerHTML = ACH_DEFS.map(a=>{
     const un = !!S.ach[a.id];
-    return `<div class="ach ${un?"unlocked":""}"><b>${a.e}</b><span>${a.name}</span></div>`;
+    let bar = "";
+    if(!un && typeof a.p === "function"){
+      try{ const P = a.p() || []; if(P.length===2 && P[1]>0){
+        const w = Math.min(100, Math.max(3, Math.round(P[0]/P[1]*100)));
+        bar = `<div class="ach-progress"><i style="width:${w}%"></i></div>`;
+      } }catch{}
+    }
+    return `<div class="ach ${un?"unlocked":""}"><b>${a.e}</b><span>${a.name}</span>${bar}</div>`;
   }).join("");
   $("ach-progress").textContent = `${Object.keys(S.ach).length}/${ACH_DEFS.length}`;
 }
@@ -938,7 +1005,7 @@ function exportReport(){
 /* ================== CALCULADORA ================== */
 function openCalc(g){
   const sel = $("calc-goal");
-  const act = S.goals.filter(x=>!x.done);
+  const act = visGoals().filter(x=>!x.done);
   sel.innerHTML = act.map(x=>`<option value="${x.id}">${x.emoji} ${esc(x.name)}</option>`).join("") || "";
   if(g && g.id) sel.value = g.id;
   const manual = $("calc-manual");
@@ -976,7 +1043,7 @@ function ctx(){
   const mk = monthKey();
   return { mk, st:streakCalc(), ds:dailySuggest(), bal:mIncome(mk)-mExpenses(mk), top:topCat(mk) };
 }
-function aiReply(qRaw){
+function aiReplyCore(qRaw){
   const q = (qRaw||"").toLowerCase(), A = ctx();
   if(/hola|buenas|hey|qué tal/.test(q) && q.length < 26) return `¡Hola, ${S.owner}! 👋 Pregúntame por tu <b>balance</b>, <b>metas</b>, <b>racha</b>, <b>presupuesto</b> o pídeme un <b>consejo</b>.`;
   if(/balance|cu[aá]nto tengo|ingreso|gast[eé]|report/.test(q))
@@ -1067,105 +1134,816 @@ function wirePhoto(){
   });
 }
 
-/* ================== GRUPO EN VIVO · P2P Trystero/Nostr ================== */
-let GP = null;
-async function gpJoin(){
-  const raw = $("gp-code").value.trim().replace(/\s+/g,"-").toLowerCase();
-  if(!raw){ SFX.err(); toast("Escribe un código para el grupo 💬"); return; }
-  $("gp-status").textContent = "Conectando…";
-  $("gp-dot").style.opacity = ".7";
-  try{
-    const nostring = await import("https://esm.sh/trystero@0.20.0/nostr");
-    const room = nostring.joinRoom({ appId:"ahorra-plus-v25" }, raw);
-    const [recvMsg, sendMsg] = room.makeAction("msg");
-    const [recvStat, sendStat] = room.makeAction("stat");
-    GP = { room, code:raw, sendMsg, sendStat, peers:{} };
-    S.gb.code = raw; save();
-    recvMsg((data, pid)=>{
-      if(!data || !data.t) return;
-      gpBubble(data.n || "Alguien", data.t, false);
-      if(!$("panel-group").classList.contains("open")) notify(`💬 ${data.n || "El grupo"}`, data.t);
-    });
-    recvStat((data, pid)=>{ if(data && data.n){ GP.peers[pid] = { name:data.n, saved:data.s||0, streak:data.r||0, goal:data.g||"", pct:data.p??100 }; renderGP(); } });
-    room.onPeerJoin(pid=>{
-      if(!GP) return;
-      gpSys("👋 Entró al grupo");
-      renderGP(); sendMyStat();
-    });
-    room.onPeerLeave(pid=>{
-      if(!GP) return;
-      const n = GP.peers[pid]?.name || "Alguien";
-      delete GP.peers[pid];
-      gpSys(`🚪 ${n} salió del grupo`);
-      renderGP();
-    });
-    gpSys(`✅ Conectado — comparte el código "${raw}" con quien quieras`);
-    $("gp-form").classList.add("hidden");
-    $("gp-msgform").classList.remove("hidden");
-    $("gp-leave").classList.remove("hidden");
-    renderGP(); sendMyStat();
-    SFX.win(); toast("👥 Grupo conectado", true);
-  }catch(err){
-    GP = null;
-    $("gp-status").textContent = "Sin conexión";
-    $("gp-dot").style.opacity = ".35";
-    SFX.err();
-    toast("No se pudo conectar (¿sin internet?) 😕", true);
+/* ==================================================================
+   MÓDULO v3 · FINANZAS — deudas, tarjetas, recurrentes,
+   fondo de emergencia, comparación mensual, patrimonio,
+   simulador avanzado, desafíos, seguridad y respaldos
+   ================================================================== */
+const mExp = () => mExpenses(monthKey());
+const fmtK = n => {
+  const v = Math.round(+n || 0);
+  const a = Math.abs(v);
+  if(a >= 1e6) return (v<0?"-$":"$")+(a/1e6).toFixed(1).replace(".0","")+"M";
+  if(a >= 1e4) return (v<0?"-$":"$")+(a/1e3).toFixed(1).replace(".0","")+"k";
+  return fmt(v);
+};
+
+/* ---------- FONDO DE EMERGENCIA ---------- */
+function renderEF(){
+  const ef = EF();
+  const home = $("ef-card"), block = $("ef-block");
+  if(!home && !block) return;
+  if(!ef){
+    const html = `
+      <div class="ef-top"><span class="ef-ico">🚑</span>
+        <div style="flex:1;min-width:0"><b>Fondo de emergencia</b>
+        <span class="stat-help">Tu colchón para imprevistos. Un buen objetivo: 3 meses de gastos ≈ <b style="color:var(--ac)">${esc(fmt(3*mExp()))}</b></span></div></div>
+      <div class="ef-actions"><button class="btn btn-primary btn-sm" data-ef="new">Crear fondo</button></div>`;
+    if(home){ home.innerHTML = html; home.style.display = "";
+      home.onclick = e => { if(e.target.closest("[data-ef=new]")) openEFModal(); }; }
+    if(block) block.innerHTML = `<div class="card glass">${html}<div style="height:6px"></div></div>`;
+    return;
+  }
+  const pct = efSavedPct();
+  const days = mExp()>0 ? Math.floor(ef.saved/mExp()*30) : 0;
+  const mini = `
+    <div style="display:flex;width:100%;align-items:center;gap:13px">
+      <span class="ef-ico">🚑</span>
+      <div style="flex:1;min-width:0">
+        <b style="font-size:14px">Fondo de emergencia · ${pct}%</b>
+        <div class="goal-bar" style="margin:6px 0 4px"><div class="goal-fill" style="width:${pct}%"></div></div>
+        <span class="stat-help">${fmt(ef.saved)}${ef.total?` de ${fmt(ef.total)}`:""}${days>0?` · cubre ${days} días de gastos`:""}</span>
+      </div>
+      <button class="btn btn-primary btn-sm" data-ef="add" style="flex-shrink:0">＋</button>
+    </div>`;
+  if(home){
+    home.innerHTML = mini;
+    home.onclick = e => { if(e.target.closest("[data-ef=add]")){ pendingGoal = ef.id; openMoney(); } };
+  }
+  const full = `
+    <div class="card glass">
+      <div class="ef-top"><span class="ef-ico">🚑</span><div style="flex:1;min-width:0"><b>Fondo de emergencia · ${pct}%</b>
+        <span class="stat-help">${fmt(ef.saved)} de ${fmt(ef.total||0)} · ${days>0?`protege ${days} días de gastos 🛡️`:"ponle una meta al fondo"}</span></div>
+        <button class="goal-menu" data-ef="menu">⋯</button></div>
+      <div class="goal-bar big"><div class="goal-fill" style="width:${pct}%"></div></div>
+      <div class="ef-actions">
+        <button class="btn btn-primary btn-sm" data-ef="add">＋ Aportar</button>
+        <button class="btn btn-ghost btn-sm" data-ef="out">🏧 Retirar</button>
+        <button class="btn btn-ghost btn-sm" data-ef="edit">✏️ Meta</button>
+      </div>
+    </div>`;
+  if(block){
+    block.innerHTML = full;
+    block.onclick = e => {
+      const a = e.target.closest("[data-ef]")?.dataset.ef; if(!a) return;
+      if(a==="add"){ pendingGoal = ef.id; openMoney(); }
+      else if(a==="out"){ pendingGoal = ef.id; openWithdraw(ef); }
+      else if(a==="edit") openEFModal(ef);
+      else if(a==="menu") efMenu(ef);
+    };
   }
 }
-function gpLeave(){
-  if(!GP) return;
-  try{ GP.room.leave(); }catch{}
-  GP = null;
-  gpSys("🔌 Saliste del grupo");
-  $("gp-status").textContent = "Desconectado";
-  $("gp-dot").style.opacity = ".35";
-  $("gp-form").classList.remove("hidden");
-  $("gp-msgform").classList.add("hidden");
-  $("gp-leave").classList.add("hidden");
-  $("gp-peers").innerHTML = "";
-  toast("Saliste del grupo 👋");
+let editingEF = false;
+function efMenu(ef){
+  const sheet = document.createElement("div"); sheet.className = "sheet";
+  sheet.innerHTML = `<div class="sheet-backdrop"></div><div class="sheet-card glass">
+    <div class="sheet-grip"></div><b class="sheet-title">🚑 Fondo de emergencia</b>
+    <button class="quick-btn" data-a="withdraw">🏧 Retirar dinero</button>
+    <button class="quick-btn" data-a="edit">✏️ Editar meta del fondo</button>
+    <button class="quick-btn" data-a="del">🗑️ Eliminar fondo</button>
+    <button class="quick-btn" data-a="x">Cancelar</button></div>`;
+  document.body.appendChild(sheet);
+  sheet.addEventListener("click", e => {
+    if(!e.target.closest("[data-a]")){ if(e.target.classList.contains("sheet-backdrop")) sheet.remove(); return; }
+    const a = e.target.dataset.a; sheet.remove();
+    if(a==="withdraw"){ pendingGoal = ef.id; openWithdraw(ef); }
+    else if(a==="edit") openEFModal(ef);
+    else if(a==="del" && confirm("¿Eliminar el fondo de emergencia?")){
+      S.goals = S.goals.filter(x=>x.id!==ef.id); save(); renderAll(); toast("Fondo de emergencia eliminado");
+    }
+  });
 }
-function sendMyStat(){
-  if(!GP) return;
-  const g = S.goals.filter(x=>!x.done).sort((a,b)=>daysOf(a)-daysOf(b))[0];
-  try{
-    GP.sendStat({ n:S.owner||"Yo", s:totalSaved(), r:streakCalc(),
-      g:g ? `${g.emoji} ${g.name}` : "—",
-      p:g ? Math.min(100, Math.round(g.saved/Math.max(g.total,1)*100)) : 100 });
-  }catch{}
+function openEFModal(ef){
+  const cur = ef || {};
+  $("ef-target").value = cur.total || "";
+  $("ef-start").value = "";
+  editingEF = !!ef;
+  $("m-ef").classList.remove("hidden");
 }
-function gpBubble(n, t, self){
-  const c = $("gp-chat"), b = document.createElement("div");
-  b.className = "bubble " + (self ? "me" : "ai");
-  b.innerHTML = self ? esc(t) : `<span class="gp-who">${esc(n)}</span><br>${esc(t)}`;
-  c.appendChild(b);
-  c.scrollTop = c.scrollHeight;
-  while(c.children.length > 80) c.firstChild.remove();
+function submitEF(){
+  const target = parseFloat($("ef-target").value)||0, start = parseFloat($("ef-start").value)||0;
+  let ef = EF();
+  if(ef){
+    if(target>0) ef.total = target;
+    toast("Meta del fondo actualizada ✏️");
+  } else {
+    ef = { id:rnd(), name:"Fondo de emergencia", emoji:"🚑", img:"", total:target, saved:start,
+      deadline:"", done:false, ef:true, shared:false, members:[S.owner], contribs:{}, history:[] };
+    if(start>0) ef.history.push({ d:today(), amt:start, by:S.owner });
+    S.goals.push(ef); S.xp += 20;
+    toast("🚑 Fondo de emergencia creado", true); SFX.money();
+  }
+  save(); closeAll(); renderAll(); checkAch();
 }
-function gpSys(t){
-  const c = $("gp-chat"), b = document.createElement("div");
-  b.className = "bubble sys"; b.textContent = t;
-  c.appendChild(b); c.scrollTop = c.scrollHeight;
+
+/* ---------- DEUDAS Y TARJETAS ---------- */
+const debtRemain = d => Math.max(0, (d.total||0) - (d.paid||0));
+function renderDebts(){
+  const l = $("debts-list"); if(!l) return;
+  l.innerHTML = "";
+  if(!S.debts.length) l.innerHTML = `<div class="empty" style="margin-bottom:10px"><b>💳</b>Sin deudas registradas.<br>Añade préstamos o tarjetas y controla su pago</div>`;
+  S.debts.forEach(d=>{
+    const pct = Math.min(100, Math.round((d.paid||0)/Math.max(d.total,1)*100));
+    const remain = debtRemain(d), card = d.kind==="card";
+    const months = d.payment>0 ? Math.ceil(remain/d.payment) : null;
+    const item = document.createElement("div"); item.className = "card glass debt-card";
+    item.innerHTML = `
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:9px">
+        <span class="ef-ico">${card?"💳":"🏦"}</span>
+        <div style="flex:1;min-width:0"><b>${esc(d.name)}${d.done?" ✅":""}</b>
+          <span class="stat-help">${card&&d.limit?`Disponible ${fmt(Math.max(0,d.limit-(d.paid||0)))} de ${fmt(d.limit)} · `:""}${months&&!d.done?`a ${fmt(d.payment)}/mes → ${months} pagos`:""}</span></div>
+        <button class="goal-menu" data-pay-menu="${d.id}">⋯</button>
+      </div>
+      <div class="goal-amounts"><span class="goal-saved" style="color:${card&&pct>=70?"var(--red)":"var(--ac)"}">${fmtK(remain)}</span>
+        <span class="goal-total">${card?"deuda":"de"} ${fmtK(d.total)}</span></div>
+      <div class="goal-bar"><div class="goal-fill" style="width:${pct}%;${card?"background:linear-gradient(90deg,#c2613a,var(--red));":""}"></div></div>
+      ${d.done?`<div class="goal-done-badge">🎉 ¡Deuda liquidada por completo!</div>`:`
+      <div class="ef-actions">
+        <button class="btn btn-sm btn-primary" data-pay="${d.id}">💰 Registrar pago</button>
+        <button class="btn btn-sm btn-ghost" data-pay-edit="${d.id}">✏️</button>
+      </div>`}`;
+    item.querySelector("[data-pay]")?.addEventListener("click", ()=>openPay(d));
+    item.querySelector("[data-pay-edit]")?.addEventListener("click", ()=>openDebtModal(d));
+    item.querySelector("[data-pay-menu]")?.addEventListener("click", ()=>debtMenu(d));
+    l.appendChild(item);
+  });
+  try{ drawDebtChart(); }catch{}
+  const sum = $("debts-sum");
+  if(sum){
+    const rem = S.debts.reduce((a,d)=>a+debtRemain(d),0);
+    sum.innerHTML = S.debts.length ? `Deuda total pendiente: <b style="color:var(--red)">${fmtK(rem)}</b> · ${fmtK(S.debts.filter(d=>!d.done).reduce((a,d)=>a+(d.payment||0),0))}/mes en pagos` : "";
+  }
 }
-function renderGP(){
-  if(!$("gp-peers")) return;
-  if(!GP){ $("gp-status").textContent = "Desconectado"; $("gp-dot").style.opacity = ".35"; return; }
-  const ps = Object.entries(GP.peers);
-  $("gp-status").textContent = ps.length
-    ? `En línea · ${ps.map(([,p])=>p.name).join(", ")}`
-    : "En línea · esperando a alguien…";
-  $("gp-dot").style.opacity = "1";
-  $("gp-peers").innerHTML = ps.map(([,p])=>
-    `<span class="gp-chip"><b>${esc(p.name)}</b> · 💰${fmt(p.saved)} · 🔥${p.streak}${p.goal && p.pct<100 ? ` · ${esc(p.goal)} ${p.pct}%` : ""}${p.pct>=100 ? " · 🏆 ¡meta cumplida!" : ""}</span>`
-  ).join("");
+function openDebtModal(d){
+  editingDebt = d?.id || null;
+  $("m-debt-title").textContent = d ? "✏️ Editar deuda" : d?.kind==="card" ? "💳 Nueva tarjeta" : "💳 Nueva deuda";
+  $("debt-kind").value = d?.kind || "loan";
+  document.querySelectorAll("#debt-kind-seg .seg").forEach(x => x.classList.toggle("active", x.dataset.kind === $("debt-kind").value));
+  $("debt-name").value = d?.name || "";
+  $("debt-total").value = d?.total || "";
+  $("debt-paid").value = d?.paid || 0;
+  $("debt-payment").value = d?.payment || "";
+  $("debt-limit-wrap").classList.toggle("hidden", ($("debt-kind").value!=="card"));
+  $("debt-limit").value = d?.limit || "";
+  $("debt-day").value = d?.day || 5;
+  $("m-debt").classList.remove("hidden");
 }
+let editingDebt = null;
+function submitDebt(){
+  const name = $("debt-name").value.trim(), total = parseFloat($("debt-total").value);
+  if(!name || !(total>0)){ SFX.err(); toast("Nombre y monto de la deuda 💛"); return; }
+  const data = {
+    name, kind:$("debt-kind").value, emoji:$("debt-kind").value==="card"?"💳":"🏦",
+    total, paid:parseFloat($("debt-paid").value)||0,
+    payment:parseFloat($("debt-payment").value)||0,
+    limit:parseFloat($("debt-limit").value)||0,
+    day:Math.min(28, Math.max(1, +$("debt-day").value||5)),
+  };
+  if(editingDebt){ const d = S.debts.find(x=>x.id===editingDebt); if(d) Object.assign(d, data); toast("Deuda actualizada ✏️"); }
+  else{
+    const d0 = { id:rnd(), ...data, done:data.paid>=total, history:[] };
+    if(data.paid > 0) d0.history.push({ d:today(), amt:data.paid, initial:true });
+    S.debts.push(d0);
+    toast(data.kind==="card"?"💳 Tarjeta añadida":"🏦 Deuda añadida", true);
+  }
+  save(); closeAll(); renderAll(); checkAch(); SFX.pop();
+}
+function openPay(debt){
+  pendingDebt = debt.id;
+  $("pay-info").innerHTML = `Saldo pendiente: <b>${fmt(debtRemain(debt))}</b>${debt.payment?` · pago sugerido ${fmt(Math.min(debt.payment, debtRemain(debt)))}`:""}`;
+  $("pay-amount").value = debt.payment && debt.payment<=debtRemain(debt) ? debt.payment : "";
+  $("pay-expense").checked = debt.kind==="card";
+  $("m-pay").classList.remove("hidden");
+}
+let pendingDebt = null;
+function submitPay(){
+  const d = S.debts.find(x=>x.id===pendingDebt), amt = parseFloat($("pay-amount").value);
+  if(!d || !amt || amt<=0){ SFX.err(); return; }
+  if(amt > debtRemain(d)){ SFX.err(); toast(`Para liquidarla solo falta ${fmt(debtRemain(d))}`, true); return; }
+  d.paid = (d.paid||0) + amt;
+  d.history = d.history || []; d.history.push({ d:today(), amt:+amt });
+  let cleared = false;
+  if(d.paid >= d.total){ d.done = true; cleared = true; }
+  if($("pay-expense").checked){
+    S.expenses.push({ id:rnd(), name:`Pago ${d.name}`, amt:+amt, cat:"otros", d:today() });
+  }
+  S.xp += 15;
+  save(); closeAll(); renderAll(); checkAch();
+  if(cleared){ S.xp += 150; save(); confetti(120); SFX.win();
+    toast(`🎉 ¡${esc(d.name)} liquidada por completo! +150 XP`, true);
+    notify("🎉 Deuda liquidada", `${S.owner}, saldaste ${d.name} por completo. Eres libre de esa carga 💚`);
+  } else { SFX.money(); toast(`💰 Pago de ${fmt(amt)} en ${d.name}`); }
+}
+
+/* ---------- GASTOS RECURRENTES ---------- */
+function renderRecur(){
+  const l = $("recur-list"); if(!l) return;
+  l.innerHTML = "";
+  if(!S.recurring.length) l.innerHTML = `<div class="empty" style="margin-bottom:10px"><b>🔁</b>Sin gastos recurrentes.<br>Luz, agua, suscripciones… se registran solos cada mes</div>`;
+  S.recurring.forEach(r=>{
+    const next = nextRecurDay(r.day);
+    const it = document.createElement("div"); it.className = "card glass recur-item";
+    it.innerHTML = `
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:8px">
+        <span class="tx-ico out">${CATS[r.cat]||"📦"}</span>
+        <div style="flex:1;min-width:0"><b>${esc(r.name)}</b>
+          <span class="stat-help">${r.lastPaid===monthKey() ? "✅ ya registrado este mes" : `Día ${r.day} · próximo ${next.getDate()} ${MONS[next.getMonth()]}`}</span></div>
+        <b style="font-size:15px">${fmt(r.amt)}</b></div>
+      <div style="display:flex;align-items:center;gap:10px">
+        <label class="switch"><input type="checkbox" ${r.on?"checked":""}><span class="slider"></span></label>
+        <span class="stat-help" style="flex:1">${r.on?"Auto-registro activo":"Pausado"}</span>
+        <button class="btn btn-sm btn-ghost" data-rec-pay="${r.id}">✅ Pagué hoy</button>
+        <button class="rem-del" data-rec-del="${r.id}">🗑️</button></div>`;
+    it.querySelector(".switch input").addEventListener("change", e=>{ r.on = e.target.checked; save(); renderRecur(); });
+    it.querySelector("[data-rec-del]").addEventListener("click", ()=>{ S.recurring = S.recurring.filter(x=>x.id!==r.id); save(); renderRecur(); renderCalendar(); });
+    it.querySelector("[data-rec-pay]").addEventListener("click", ()=>recPay(r));
+    l.appendChild(it);
+  });
+  const tot = S.recurring.filter(r=>r.on).reduce((a,r)=>a+r.amt,0);
+  const sum = $("recur-sum");
+  if(sum) sum.innerHTML = tot ? `Fijos mensuales: <b style="color:var(--ac)">${fmt(tot)}</b> · ${fmt(tot/30)}/día 🔄` : "";
+}
+function debtMenu(d){
+  const sheet = document.createElement("div"); sheet.className = "sheet";
+  sheet.innerHTML = `<div class="sheet-backdrop"></div><div class="sheet-card glass">
+    <div class="sheet-grip"></div><b class="sheet-title">${d.emoji} ${esc(d.name)}</b>
+    <button class="quick-btn" data-a="pay">💰 Registrar pago</button>
+    <button class="quick-btn" data-a="edit">✏️ Editar</button>
+    <button class="quick-btn" data-a="del">🗑️ Eliminar deuda</button>
+    <button class="quick-btn" data-a="x">Cancelar</button></div>`;
+  document.body.appendChild(sheet);
+  sheet.addEventListener("click", e=>{
+    if(!e.target.closest("[data-a]")){ if(e.target.classList.contains("sheet-backdrop")) sheet.remove(); return; }
+    const a = e.target.dataset.a; sheet.remove();
+    if(a==="pay") openPay(d);
+    else if(a==="edit") openDebtModal(d);
+    else if(a==="del" && confirm(`¿Eliminar la deuda "${d.name}"?`)){ S.debts = S.debts.filter(x=>x.id!==d.id); save(); renderAll(); checkAch(); toast("Deuda eliminada"); }
+  });
+}
+function nextRecurDay(day){
+  const n = new Date();
+  const d = new Date(n.getFullYear(), n.getMonth(), day);
+  if(d < new Date(n.getFullYear(), n.getMonth(), n.getDate())) d.setMonth(d.getMonth()+1);
+  return d;
+}
+function recPay(r){
+  S.expenses.push({ id:rnd(), name:`${CATS[r.cat]||""} ${r.name}`, amt:r.amt, cat:r.cat, d:today() });
+  r.lastPaid = monthKey();
+  save(); SFX.money(); toast(`✅ ${r.name}: ${fmt(r.amt)} registrado`, true);
+  renderAll(); checkAch();
+}
+function openRecurModal(){
+  $("recur-name").value = ""; $("recur-amt").value = ""; $("recur-cat").value = "casa"; $("recur-day").value = "1";
+  $("m-recur").classList.remove("hidden");
+}
+function submitRecur(){
+  const name = $("recur-name").value.trim(), amt = parseFloat($("recur-amt").value);
+  if(!name || !(amt>0)){ SFX.err(); toast("Pon nombre y monto 💛"); return; }
+  S.recurring.push({ id:rnd(), name, amt, cat:$("recur-cat").value || "otros",
+    day:Math.min(28, Math.max(1, +$("recur-day").value || 1)), on:true, lastPaid:"" });
+  save(); closeAll(); renderAll(); checkAch(); SFX.pop();
+  toast("🔁 Gasto recurrente añadido", true);
+}
+setInterval(()=>{
+  if(!document.hasFocus()) return;
+  checkRecur();
+}, 30*60000);
+function checkRecur(){
+  if(!S.recurring) return;
+  const dom = new Date().getDate(), mk = monthKey();
+  S.recurring.forEach(r=>{
+    if(r.on && dom === r.day && r.lastPaid !== mk){
+      r.lastPaid = mk; save();
+      S.expenses.push({ id:rnd(), name:`${CATS[r.cat]||""} ${r.name} (recurrente)`, amt:r.amt, cat:r.cat, d:today() });
+      save(); renderAll(); checkAch();
+      notify(`🔁 ${r.name} registrado`, `Tu gasto recurrente de ${fmt(r.amt)} entró automáticamente`);
+    }
+  });
+}
+
+/* ---------- CALENDARIO FINANCIERO v3 ---------- */
+function dayFinancials(k){
+  const inc = S.income.filter(t=>t.d===k);
+  const exp = S.expenses.filter(t=>t.d===k);
+  const sav = S.goals.reduce((a,g)=>a+(g.history||[]).filter(h=>h.d===k&&h.amt>0).reduce((x,h)=>x+h.amt,0),0);
+  return { inc, exp, sav };
+}
+function dueForDay(i){
+  const due = [];
+  S.recurring.filter(r=>r.on && r.day===i && r.lastPaid!==monthKey()).forEach(r=>due.push({ ico:CATS[r.cat]||"📦", name:r.name, amt:r.amt }));
+  S.debts.filter(d=>!d.done && d.day===i && d.payment).forEach(d=>due.push({ ico:d.emoji||"🏦", name:"Pago "+d.name, amt:d.payment }));
+  return due;
+}
+
+/* ---------- COMPARACIÓN MENSUAL · PATRIMONIO · DEUDAS ---------- */
+function lastMonths(n){
+  const out = [], now = new Date();
+  for(let i=n-1;i>=0;i--){
+    const d = new Date(now.getFullYear(), now.getMonth()-i, 1);
+    out.push(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`);
+  }
+  return out;
+}
+function drawBars2(cv, series, labels, tipFor){
+  const P = prep(cv); if(!P) return;
+  const { c, w, h } = P;
+  const raw = series.flatMap(s=>s.vals).filter(isFinite);
+  const max = Math.max(1, ...raw);
+  const pad = 8;
+  let hover = -1;
+  function draw(){
+    c.clearRect(0,0,w,h);
+    const step = (w-pad*2)/labels.length;
+    const bw = Math.max(6, Math.min(12, (step*0.62)/series.length));
+    const group = bw*series.length + 3*(series.length-1);
+    labels.forEach((_,i)=>{
+      series.forEach((s,j)=>{
+        const v = s.vals[i];
+        const bh = Math.max(3, (v/max)*(h-42));
+        const x = pad + i*step + (step-group)/2 + j*(bw+3);
+        const y = h-22-bh;
+        c.fillStyle = s.color;
+        c.globalAlpha = i===hover ? 1 : .72;
+        rr(c, x, y, bw, bh, 4); c.fill();
+      });
+      c.globalAlpha = 1;
+      c.fillStyle = "rgba(140,160,150,.85)"; c.font = "10px -apple-system, sans-serif"; c.textAlign = "center";
+      c.fillText(labels[i], pad+i*step+step/2, h-6);
+    });
+  }
+  const idxAt = e => { const r = cv.getBoundingClientRect(); return Math.max(0, Math.min(labels.length-1, Math.floor((e.clientX-r.left-pad)/((w-pad*2)/labels.length)))); };
+  cv.onpointermove = e => { const i = idxAt(e); if(i!==hover){ hover = i; draw(); showTip(e.clientX, e.clientY-14, tipFor(i)); } };
+  cv.onpointerleave = () => { hover = -1; draw(); hideTip(); };
+  draw();
+}
+function cmpPct(cur, prev){ return prev>0 ? Math.round((cur-prev)/prev*100) : (cur>0?100:0); }
+function deltaChip(delta, pct){
+  const up = delta >= 0;
+  return `<span style="color:${up?"var(--ac)":"var(--red)"}">${up?"▲":"▼"}${pct===0?fmt(Math.abs(delta)):Math.abs(pct)+"%"}</span>`;
+}
+function drawMonthsChart(){
+  const cv = $("chart-months"); if(!cv || !cv.clientWidth) return;
+  const MK = lastMonths(6);
+  const inc = MK.map(m=>mIncome(m)), exp = MK.map(m=>mExpenses(m)), sav = MK.map(m=>mSavings(m));
+  const labels = MK.map(m=>MONS[+m.slice(5,7)-1]);
+  drawBars2(cv, [
+    { vals:inc, color:cssVar("--ac"), label:"Ingresos" },
+    { vals:exp, color:"#ff6b6b", label:"Gastos" },
+    { vals:sav, color:"#f0b429", label:"Ahorrado" },
+  ], labels, i => `<b>${labels[i]}</b><br><span style="color:#7ee6c3">🟢 ${fmtK(inc[i])}</span><br><span style="color:#ff9d9d">🔴 ${fmtK(exp[i])}</span><br><span style="color:#ffd97a">🐷 ${fmtK(sav[i])}</span>`);
+  const lg = $("cmp-legend");
+  if(lg) lg.innerHTML = `<span><i style="background:${cssVar("--ac")}"></i>Ingresos</span><span><i style="background:#ff6b6b"></i>Gastos</span><span><i style="background:#f0b429"></i>Ahorrado</span>`;
+  const hlp = $("cmp-help");
+  if(hlp && MK.length>1){
+    const cur = MK[MK.length-1], prev = MK[MK.length-2];
+    hlp.innerHTML = `vs ${MONS[+prev.slice(5,7)-1]}: ingresos ${deltaChip(mIncome(cur)-mIncome(prev), cmpPct(mIncome(cur),mIncome(prev)))} · gastos ${deltaChip(mExpenses(cur)-mExpenses(prev), cmpPct(mExpenses(cur),mExpenses(prev)))}`;
+  }
+}
+function drawNetChart(){
+  const cv = $("chart-net"); if(!cv || !cv.clientWidth) return;
+  const MK = lastMonths(12);
+  let acc = 0;
+  const pts = MK.map(m=>{ acc += mSavings(m); return acc; });
+  drawLine(cv, pts);
+}
+function drawDebtChart(){
+  const cv = $("chart-debt"); if(!cv || !cv.clientWidth) return;
+  const MK = lastMonths(12);
+  const vals = MK.map(m=>{
+    const end = m+"-31";
+    return S.debts.reduce((a,d)=>{
+      const paid = (d.history||[]).filter(x=>x.d && x.d<=end).reduce((s,x)=>s+(+x.amt||0),0);
+      return a + Math.max(0, (d.total||0) - paid);
+    },0);
+  });
+  drawLine(cv, vals);
+}
+
+/* ---------- SIMULADOR v3 (cuánto ahorrar / cuándo llego) ---------- */
+let calMode = "calc";
+function calcRun(){
+  if(calMode === "sim") return simRun();
+  let target, days, note;
+  if($("calc-manual").checked){
+    const t = parseFloat($("calc-target").value) || 0, d = +($("calc-days").value) || 0;
+    if(!t || !d){ SFX.err(); toast("Pon objetivo y días 💛"); return; }
+    target = t; days = d;
+    note = `Plan propio: ${fmt(t)} en ${d} días`;
+  } else {
+    const g = S.goals.find(x=>x.id === $("calc-goal").value);
+    if(!g){ SFX.err(); return; }
+    target = g.total - g.saved; days = daysOf(g);
+    note = `${g.emoji} ${esc(g.name)}: faltan ${fmt(target)} en ${days} días`;
+  }
+  const di = Math.ceil(target/Math.max(1,days));
+  const ws = Math.ceil(target/Math.max(1,Math.round(days/7)));
+  const mo = Math.ceil(target/Math.max(1,Math.round(days/30)));
+  $("calc-big-label").textContent = "al día";
+  $("calc-daily").textContent = fmt(di);
+  $("calc-weekly").textContent = fmt(ws);
+  $("calc-monthly").textContent = fmt(mo);
+  $("calc-note").innerHTML = `${note}<br>💡 Al recibir tu pago, guarda ${fmt(mo)} primero 🐷`;
+  $("calc-result").classList.remove("hidden"); SFX.pop();
+}
+function simRun(){
+  const target = parseFloat($("sim-target").value) || 0;
+  const per = parseFloat($("sim-amt").value) || 0;
+  const freq = $("sim-freq").value;
+  if(!target || !per){ SFX.err(); toast("Pon cuánto quieres y cuánto ahorrarás 🐷"); return; }
+  const perMonth = per * (freq==="d" ? 30 : freq==="w" ? 4.345 : 1);
+  const months = Math.max(0, Math.ceil(target/perMonth) - (per>=target ? 1 : 0));
+  const when = new Date(Date.now() + Math.max(1,months)*30.44*86400000);
+  $("calc-big-label").textContent = months<=1 ? "1 mes" : `${months} meses`;
+  $("calc-daily").textContent = dfmt(when.toISOString().slice(0,10));
+  $("calc-weekly").textContent = fmt(per*(freq==="w"?1:freq==="d"?7:30/7));
+  $("calc-monthly").textContent = fmt(perMonth);
+  $("calc-note").innerHTML = `Con ${fmt(per)}/${freq==="d"?"día":freq==="w"?"semana":"mes"} llegas a ${fmt(target)} en <b>${months<=1?"1 mes":months+" meses"}</b> (~${Math.max(1,Math.round(months*30.44))} días) 🚀`;
+  $("calc-result").classList.remove("hidden"); SFX.pop();
+}
+
+/* ---------- DESAFÍOS (diario, semanal, mensual) ---------- */
+function weekStartKey(){
+  const d = new Date(); d.setHours(0,0,0,0);
+  d.setDate(d.getDate() - ((d.getDay()+6)%7));
+  return d.toISOString().slice(0,10);
+}
+function depAvg7(){
+  const a = new Date(Date.now()-7*86400000).toISOString().slice(0,10);
+  const sum = S.goals.reduce((x,g)=>x+(g.history||[]).filter(h=>h.amt>0&&h.d>=a).reduce((s,h)=>s+h.amt,0),0);
+  return sum/7;
+}
+function depsSince(k){ return S.goals.reduce((a,g)=>a+(g.history||[]).filter(h=>h.amt>0&&h.d>=k).length,0); }
+function savSince(k){ return S.goals.reduce((a,g)=>a+(g.history||[]).filter(h=>h.amt>0&&h.d>=k).reduce((x,h)=>x+h.amt,0),0); }
+function genChallenges(){
+  const mk = monthKey(), ds = dailySuggest(), wK = weekStartKey();
+  if(!S.challenges.daily || S.challenges.daily.k !== today()){
+    S.challenges.daily = ds.amt>0 && ds.goal
+      ? { k:today(), mode:"amt", target:ds.amt, label:`Aporta ${fmt(ds.amt)} a ${ds.goal.emoji} ${ds.goal.name} hoy`, xp:30, done:false }
+      : { k:today(), mode:"count", target:1, label:"Registra tu primer depósito del día", xp:30, done:false };
+  }
+  if(!S.challenges.weekly || S.challenges.weekly.k !== wK){
+    const base = depAvg7() >= 50 ? Math.round(depAvg7()*7) : (mIncome(mk)>0 ? Math.round(mIncome(mk)*0.05) : 400);
+    S.challenges.weekly = base >= 100
+      ? { k:wK, mode:"amt", target:base, label:`Ahorra ${fmt(base)} esta semana`, xp:100, done:false }
+      : { k:wK, mode:"count", target:4, label:"Haz 4 depósitos esta semana", xp:100, done:false };
+  }
+  if(!S.challenges.monthly || S.challenges.monthly.k !== mk){
+    const base = mIncome(mk)>0 ? Math.round(mIncome(mk)*0.15) : 1500;
+    S.challenges.monthly = base >= 500
+      ? { k:mk, mode:"amt", target:base, label:`Ahorra ${fmtK(base)} este mes (15% de tus ingresos)`, xp:300, done:false }
+      : { k:mk, mode:"count", target:8, label:"Haz 8 depósitos este mes", xp:300, done:false };
+  }
+}
+function chalCur(ch){
+  if(!ch) return 0;
+  if(ch.k === today()) return ch.mode==="amt" ? savedToday() : depsSince(today());
+  if(ch.k === weekStartKey()) return ch.mode==="amt" ? savSince(weekStartKey()) : depsSince(weekStartKey());
+  return ch.mode==="amt" ? mSavings(monthKey()) : depsSince(monthKey());
+}
+function checkChallenges(){
+  genChallenges();
+  ["daily","weekly","monthly"].forEach(t=>{
+    const ch = S.challenges[t];
+    if(ch && !ch.done && chalCur(ch) >= ch.target){
+      ch.done = true; ch.doneD = today();
+      S.xp += ch.xp;
+      S.chalLog[t] = (S.chalLog[t]||0) + 1;
+      S.chalLog.total = (S.chalLog.total||0) + 1;
+      save(); SFX.win(); confetti(70);
+      toast(`🎯 ¡Desafío ${t==="daily"?"diario":t==="weekly"?"semanal":"mensual"} cumplido! +${ch.xp} XP`, true);
+      notify("🎯 Desafío cumplido", `${ch.label} — +${ch.xp} XP`);
+    }
+  });
+}
+function renderChallenges(){
+  const card = $("ch-card"); if(!card) return;
+  genChallenges();
+  const items = [["daily","☀️ Diario"],["weekly","📅 Semanal"],["monthly","🌙 Mensual"]]
+    .filter(([k])=>S.challenges[k])
+    .map(([k,t])=>{
+      const ch = S.challenges[k], cur = chalCur(ch);
+      const pct = Math.min(100, Math.round(cur/Math.max(1,ch.target)*100));
+      return `<div class="ch-item">
+        <div class="rowline"><span>${t}</span><span style="color:${ch.done?"var(--ac)":"var(--text2)"}">${ch.done?"✅ +"+ch.xp+" XP":Math.min(cur,ch.target)+" / "+fmtK(ch.target)}</span></div>
+        <div class="ch-label">${esc(ch.label)}</div>
+        <div class="goal-bar sm"><div class="goal-fill" style="width:${ch.done?100:pct}%"></div></div>
+      </div>`;
+    }).join("");
+  card.innerHTML = `<div class="ch-head"><b>🎯 Desafíos</b><span class="stat-help">${S.chalLog.total||0} cumplidos</span></div>${items}`;
+}
+
+/* ---------- INSIGHTS (análisis real) ---------- */
+function insights(){
+  const out = [], mk = monthKey();
+  const inc = mIncome(mk), exp = mExpenses(mk), bal = inc - exp;
+  if(inc > 0){
+    const rate = Math.round(bal/inc*100);
+    if(rate < 10) out.push(`Tu tasa de ahorro es <b>${rate}%</b> — lo ideal es 20%. Reducir un 10% los gastos libres ya lo cambia 🎯`);
+    else if(rate >= 30) out.push(`¡Tasa de ahorro del <b>${rate}%</b>! Vas por encima de la mayoría 🏆`);
+  }
+  const overs = Object.entries(CATS)
+    .map(([k])=>{
+      const lim = (S.budget.cats||{})[k]||0;
+      const sp = S.expenses.filter(t=>inMonth(t.d,mk)&&t.cat===k).reduce((a,t)=>a+t.amt,0);
+      return { k, sp, lim };
+    })
+    .filter(x=>x.lim>0 && x.sp>x.lim)
+    .sort((a,b)=>(b.sp-b.lim)-(a.sp-a.lim))[0];
+  if(overs) out.push(`<b>${CATS[overs.k]} ${overs.k}</b> se pasó su presupuesto: ${fmt(overs.sp)} de ${fmt(overs.lim)}. Córtale un 15% la próxima semana 📛`);
+  const hormiga = S.expenses.filter(t=>inMonth(t.d,mk) && t.amt<=150);
+  if(hormiga.length >= 4){
+    const s = hormiga.reduce((a,t)=>a+t.amt,0);
+    out.push(`Tienes <b>${hormiga.length} gastos pequeños</b> (≤$150) que suman <b>${fmt(s)}</b> este mes — los "gastos hormiga" 🐜`);
+  }
+  const ef = EF();
+  if(!ef && visGoals().length) out.push(`No tienes fondo de emergencia 🚑. Créalo en <b>Metas → Deudas</b>; empieza con ${fmt(Math.max(500, Math.round(mExp()*0.2)))}`);
+  else if(ef && mExp()>0){
+    const d = Math.floor(ef.saved/mExp()*30);
+    if(d < 30) out.push(`Tu fondo cubre <b>${d} día${d===1?"":"s"}</b> de gastos. La meta sana: 90 días 🛡️`);
+  }
+  const pend = S.debts.filter(d=>!d.done).reduce((a,d)=>a+debtRemain(d),0);
+  if(pend > 0){
+    const mayor = S.debts.filter(d=>!d.done).sort((a,b)=>debtRemain(b)-debtRemain(a))[0];
+    out.push(`Deudas pendientes: <b>${fmtK(pend)}</b>. Ataca primero <b>${mayor.emoji} ${mayor.name}</b> (${fmtK(debtRemain(mayor))}) con pagos extra 🎯`);
+  }
+  const doneD = S.debts.filter(d=>d.done).length;
+  if(doneD>0) out.push(`Ya liquidaste <b>${doneD} deuda${doneD===1?"":"s"}</b> 💪 Cada mes sin cuota es ahorro directo`);
+  const rec = S.recurring.filter(r=>r.on).reduce((a,r)=>a+r.amt,0);
+  if(rec > 0 && inc > 0) out.push(`Tus fijos mensuales son <b>${fmt(rec)}</b> (${Math.round(rec/inc*100)}% de tus ingresos)${rec/inc>0.3?" — está alto, revisa suscripciones 🔍":""} 🔁`);
+  const prevMk = lastMonths(2)[0];
+  if(prevMk && prevMk !== mk && mExpenses(prevMk) > 0){
+    const d = mExpenses(mk) - mExpenses(prevMk);
+    if(d > 0) out.push(`Vas gastando <b>${fmt(d)} más</b> que todo ${MESES[+prevMk.slice(5,7)-1]} ⚠️`);
+    else out.push(`Vas <b>${fmt(-d)} mejor</b> en gastos que el mes pasado ✅`);
+  }
+  if(!out.length) out.push(`Registra ingresos y gastos con el ＋ y aquí empieza el análisis real 📊`);
+  return out;
+}
+
+/* ---------- IA v3 (nuevas habilidades sobre los datos reales) ---------- */
+function aiReply(qRaw){
+  const q = (qRaw||"").toLowerCase(), A = ctx();
+  if(/deuda|pr[eé]stamo|tarjeta|cr[eé]dito/.test(q)){
+    if(!S.debts.length) return "No tienes deudas registradas 🎉 Añádelas en <b>Metas → 💳 Deudas</b> y las planificamos juntos.";
+    const pend = S.debts.filter(d=>!d.done);
+    if(!pend.length) return "¡Todas tus deudas están <b>liquidadas</b>! 🎉 Nada pendiente ni tarjeta con saldo.<br>Este es el momento perfecto para mudar esa cuota a un depósito de ahorro 🐷";
+    const total = pend.reduce((a,d)=>a+debtRemain(d),0);
+    const pagos = pend.reduce((a,d)=>a+(d.payment||0),0);
+    const p = pend.map(d=>`${d.emoji} ${d.name}: <b>${fmtK(debtRemain(d))}</b>${d.payment?` (a ${fmt(d.payment)}/mes)`:""}`).join("<br>");
+    return `Deuda pendiente: <b>${fmtK(total)}</b> en ${pend.length} cuenta${pend.length>1?"s":""}.<br>${p}<br>${pagos>0?`A ${fmtK(pagos)}/mes la liquidas en ~${Math.ceil(total/pagos)} meses.`:"Pon pagos mensuales para el plan 🗓️"} Te conviene pagar extra a la <b>más pequeña</b> primero 🎯`;
+  }
+  if(/fondo|emergencia/.test(q)){
+    const ef = EF();
+    if(!ef) return `No tienes fondo de emergencia 🚑. Crea uno en <b>Metas → Deudas</b>. Recomendación estándar: 3 meses de gastos ≈ <b>${fmt(3*mExp())}</b>.`;
+    const d = mExp()>0 ? Math.floor(ef.saved/mExp()*30) : 0;
+    return `Fondo: <b>${fmt(ef.saved)}</b>${ef.total?` de ${fmt(ef.total)} (${efSavedPct()}%)`:""}. ${mExp()>0?`Cubre <b>${d} días</b> de gastos; meta sana: 90 días 🛡️`:"Registra gastos para medir tus días de cobertura."}`;
+  }
+  if(/recurrent|fijos|suscripci/.test(q)){
+    if(!S.recurring.length) return "Sin gastos recurrentes aún 🔁 Añádelos en <b>Metas → Gastos recurrentes</b> y el mes se calcula solo.";
+    const act = S.recurring.filter(r=>r.on);
+    const tot = act.reduce((a,r)=>a+r.amt,0);
+    return `Fijos activos: <b>${fmt(tot)}/mes</b> (${fmt(tot/30)}/día).<br>${act.slice().sort((a,b)=>b.amt-a.amt).slice(0,4).map(r=>`${CATS[r.cat]||"📦"} ${r.name}: ${fmt(r.amt)}`).join("<br>")}${tot>0?"<br>💡 Si algo no lo usas 3 veces al mes, cancela 📛":""}`;
+  }
+  if(/innecesari|desperdici|hormiga|caprich/.test(q)){
+    const mk = monthKey();
+    const h = S.expenses.filter(t=>inMonth(t.d,mk)&&t.amt<=150);
+    const byCat = Object.entries(CATS).map(([k])=>({ k, v:S.expenses.filter(t=>inMonth(t.d,mk)&&t.cat===k).reduce((a,t)=>a+t.amt,0) })).sort((a,b)=>b.v-a.v)[0];
+    let msg = "";
+    if(h.length>=3) msg += `Gastos hormiga: <b>${h.length} pagos ≤$150</b> = <b>${fmt(h.reduce((a,t)=>a+t.amt,0))}</b> 🐜<br>`;
+    if(byCat && byCat.v>0) msg += `Mayor categoría: <b>${CATS[byCat.k]} ${byCat.k}</b> con ${fmt(byCat.v)}.<br>`;
+    return msg || "Aún no veo gastos que recortar — registra más movimientos y detecto lo innecesario 🕵️";
+  }
+  if(/compar|mes anterior|vs|antes/.test(q)){
+    const MK = lastMonths(2), cur = MK[1], prev = MK[0];
+    const di = mIncome(cur)-mIncome(prev), de = mExpenses(cur)-mExpenses(prev), ds = mSavings(cur)-mSavings(prev);
+    return `Comparando con ${MESES[+prev.slice(5,7)-1]}:<br>🟢 Ingresos ${deltaChip(di, cmpPct(mIncome(cur),mIncome(prev)))}<br>🔴 Gastos ${deltaChip(de, cmpPct(mExpenses(cur),mExpenses(prev)))}<br>🐷 Ahorro ${deltaChip(ds, cmpPct(mSavings(cur),mSavings(prev)))}`;
+  }
+  if(/plan|estrategia|c[oó]mo salgo|organiz/.test(q)){
+    const mk = monthKey();
+    const libre = mIncome(mk) - mExpenses(mk);
+    const pend = S.debts.filter(d=>!d.done).reduce((a,d)=>a+debtRemain(d),0);
+    const ef = EF();
+    const pasos = [];
+    if(ef && efSavedPct() >= 100) pasos.push("tu fondo está al 100% ✅");
+    else if(ef) pasos.push(`llena el fondo (${efSavedPct()}%) 🚑`);
+    else pasos.push(`crea el fondo de emergencia (~desde ${fmt(Math.max(500, Math.round(mExp()*0.2)))})`);
+    if(pend>0) pasos.push(`ataca ${fmtK(pend)} de deuda, de la más pequeña a la mayor 🏦`);
+    if(A.ds.goal) pasos.push(`sigue ${A.ds.goal.emoji} ${A.ds.goal.name}: ${fmt(A.ds.amt)}/diario 🐷`);
+    if(libre>0) pasos.push(`tienes ${fmt(libre)} libres: manda al menos ${fmt(Math.round(libre*0.3))} a ahorro ANTES de gastar 🪙`);
+    return `Tu plan con tus números reales:<br>1️⃣ ${pasos.join("<br>2️⃣ ")}<br>💡 Regla 50/30/20 al recibir tu pago.`;
+  }
+  if(/informe|reporte|pdf/.test(q)){ setTimeout(aiMonthlyReport, 450); return "Generando tu <b>informe del mes</b> 📄 (se abre para guardar como PDF)…"; }
+  if(/respaldo|backup|copia/.test(q)){ setTimeout(exportBackup, 400); return "Te preparo el <b>respaldo completo</b> (.json) 💾 — si lo guardas, nada se pierde aunque cambies de teléfono."; }
+  if(/insignia|niveles|desaf[ií]/.test(q)){
+    const n = Object.keys(S.ach).length, totalChal = S.chalLog.total||0;
+    return `Vas con <b>${n}/${ACH_DEFS.length} insignias</b> 🏅 y <b>${totalChal} desafíos</b> cumplidos 🎯. El desafío de hoy: ${S.challenges.daily?.label||"🧘"} — vale +30 XP.`;
+  }
+  return aiReplyCore(qRaw);
+}
+function efSavedPct(){ const ef = EF(); return ef ? Math.min(100, Math.round(ef.saved/Math.max(ef.total,1)*100)) : 0; }
+function aiDailyTip(){
+  const ins = insights();
+  const pick = ins[Math.floor(Date.now()/86400000) % ins.length];
+  $("ai-message").innerHTML = pick;
+}
+
+/* ---------- INFORME PDF (imprimir → guardar como PDF) ---------- */
+function aiMonthlyReport(){
+  const mk = monthKey();
+  const MK = lastMonths(4);
+  const inc = mIncome(mk), exp = mExpenses(mk);
+  const rows = [
+    ...S.income.filter(t=>inMonth(t.d,mk)).map(t=>`<tr class="in"><td>${t.d}</td><td>Ingreso</td><td>${esc(t.name)}</td><td style="text-align:right">+${fmt(t.amt)}</td></tr>`),
+    ...S.expenses.filter(t=>inMonth(t.d,mk)).map(t=>`<tr><td>${t.d}</td><td>${CATS[t.cat]||"📦"} ${t.cat||"-"}</td><td>${esc(t.name)}</td><td style="text-align:right">−${fmt(t.amt)}</td></tr>`),
+    ...S.goals.flatMap(g=>(g.history||[]).filter(h=>inMonth(h.d,mk)).map(h=>`<tr class="in"><td>${h.d}</td><td>${g.ef?"🚑 Fondo":"🐷 Meta"}</td><td>${esc(g.name)}${h.by?` (${esc(h.by)})`:""}</td><td style="text-align:right">${h.amt>0?"+":""}${fmt(h.amt)}</td></tr>`)),
+  ];
+  const win = window.open("", "_blank");
+  if(!win){ toast("Permite ventanas emergentes para el PDF 🙏"); return; }
+  win.document.write(`<!DOCTYPE html><html lang="es"><head><meta charset="utf-8"><title>Informe ${mk} · Ahorra+</title><style>
+    body{ font-family:-apple-system,'Segoe UI',sans-serif; color:#111827; margin:40px; }
+    h1{ font-size:22px; margin:0 0 4px; } .sub{ color:#6b7280; font-size:12px; margin-bottom:22px; }
+    .kpis{ display:flex; gap:14px; margin-bottom:22px; }
+    .kpi{ flex:1; border:1.5px solid #e5e7eb; border-radius:14px; padding:12px 16px; }
+    .kpi b{ font-size:20px; display:block; } .kpi span{ font-size:11px; color:#6b7280; text-transform:uppercase; letter-spacing:.05em; }
+    table{ width:100%; border-collapse:collapse; font-size:12.5px; }
+    th{ text-align:left; color:#6b7280; font-size:10.5px; text-transform:uppercase; border-bottom:2px solid #e5e7eb; padding:6px 8px; }
+    td{ padding:7px 8px; border-bottom:1px solid #f3f4f6; }
+    tr.in td{ color:#047857; }
+    .sect{ margin:26px 0 8px; font-size:14px; font-weight:700; }
+    .cmp td{ padding:6px 12px; border-bottom:1px solid #f3f4f6; font-size:12.5px; }
+    @media print{ body{ margin:16px; } }
+  </style></head><body>
+    <h1>Informe mensual — Ahorra+</h1>
+    <div class="sub">${MESES[new Date().getMonth()]} ${new Date().getFullYear()} · ${esc(S.owner||"")} · generado el ${new Date().toLocaleDateString("es-DO")}</div>
+    <div class="kpis">
+      <div class="kpi"><span>Ahorrado del mes</span><b style="color:#047857">${fmt(mSavings(mk))}</b></div>
+      <div class="kpi"><span>Ingresos</span><b>${fmt(inc)}</b></div>
+      <div class="kpi"><span>Gastos</span><b>${fmt(exp)}</b></div>
+      <div class="kpi"><span>Balance libre</span><b style="color:${inc-exp>=0?"#047857":"#b91c1c"}">${fmt(inc-exp)}</b></div>
+    </div>
+    <div class="sect">Comparación (últimos 4 meses)</div>
+    <table class="cmp"><tr><th>Mes</th><th>Ingresos</th><th>Gastos</th><th>Ahorrado</th></tr>
+    ${MK.map(m=>`<tr><td>${MESES[+m.slice(5,7)-1]}</td><td>${fmt(mIncome(m))}</td><td>${fmt(mExpenses(m))}</td><td>${fmt(mSavings(m))}</td></tr>`).join("")}
+    </table>
+    ${S.debts.length?`<div class="sect">Deudas</div><table class="cmp"><tr><th>Tipo</th><th>Nombre</th><th>Pendiente</th><th>Estado</th></tr>
+      ${S.debts.map(d=>`<tr><td>${d.kind==="card"?"💳":"🏦"}</td><td>${esc(d.name)}</td><td>${fmtK(debtRemain(d))}</td><td>${d.done?"✅ liquidada":`${Math.round((d.paid||0)/Math.max(d.total,1)*100)}% pagado`}</td></tr>`).join("")}</table>`:""}
+    ${EF()?`<div class="sect">Fondo de emergencia</div><p style="font-size:12.5px">${fmt(EF().saved)} de ${fmt(EF().total||0)} (${efSavedPct()}%)${mExp()>0?` · cubre ${Math.floor(EF().saved/mExp()*30)} días de gastos`:""}</p>`:""}
+    <div class="sect">Movimientos del mes</div>
+    <table><tr><th>Fecha</th><th>Tipo</th><th>Concepto</th><th style="text-align:right">Monto</th></tr>
+    ${rows.join("")||"<tr><td colspan='4' style='color:#9ca3af'>Sin movimientos este mes</td></tr>"}
+    </table>
+    <p style="color:#9ca3af; font-size:10.5px; margin-top:26px">Ahorra+ · creado por jesuscroken · datos al ${new Date().toLocaleString("es-DO")}</p>
+    <script>setTimeout(function(){ window.print(); },300);<\/script>
+  </body></html>`);
+  win.document.close();
+  S.exportedOnce = true; save(); checkAch(); SFX.pop();
+}
+
+/* ---------- AVATAR CON FOTO DE GALERÍA ---------- */
+function wireAvatarPhoto(){
+  const inp = $("avatar-file"); if(!inp) return;
+  $("avatar-photo-btn").addEventListener("click", ()=>inp.click());
+  $("avatar-photo-clear").addEventListener("click", ()=>{
+    S.avatarImg = ""; save(); inp.value = "";
+    applyAvatar(); closeAll(); toast("Foto de perfil eliminada");
+  });
+  inp.addEventListener("change", e=>{
+    const f = e.target.files?.[0]; if(!f) return;
+    if(f.size > 12*1024*1024){ SFX.err(); toast("Imagen muy grande 😅"); return; }
+    const reader = new FileReader();
+    reader.onload = ev=>{
+      const img = new Image();
+      img.onload = ()=>{
+        const s = Math.min(img.width, img.height), max = 256;
+        const c = document.createElement("canvas"); c.width = max; c.height = max;
+        const cx = c.getContext("2d");
+        cx.drawImage(img, (img.width-s)/2, (img.height-s)/2, s, s, 0, 0, max, max);
+        S.avatarImg = c.toDataURL("image/jpeg", .8);
+        save(); applyAvatar(); closeAll();
+        SFX.pop(); toast("📷 Foto de perfil actualizada", true);
+        try{ notify("✨ Perfil listo", "Tu nueva foto se ve en toda la app 💚"); }catch{}
+      };
+      img.onerror = ()=>{ SFX.err(); toast("No pude leer esa imagen 😕"); };
+      img.src = ev.target.result;
+    };
+    reader.readAsDataURL(f);
+  });
+}
+function applyAvatar(){
+  const im = S.avatarImg;
+  ["top-avatar","avatar-edit"].forEach(id=>{
+    const el = $(id); if(!el) return;
+    if(im){
+      let i = el.querySelector("img");
+      if(!i){ el.textContent = ""; i = document.createElement("img"); i.alt = ""; i.style.cssText = "width:100%;height:100%;object-fit:cover;border-radius:50%"; el.appendChild(i); }
+      i.src = im;
+    } else if(el.querySelector("img")){ el.innerHTML = ""; el.textContent = S.avatar; }
+    else el.textContent = S.avatar;
+  });
+}
+
+/* ---------- SEGURIDAD: PIN, bloqueo y privacidad ---------- */
+const hashPin = p => { let h = 7; for(const ch of String(p)) h = (h*31 + ch.charCodeAt(0))>>>0; return h.toString(36); };
+let pinEntry = "";
+function pinIsSet(){ return !!S.security.pinHash; }
+function unlockNow(){
+  try{ sessionStorage.setItem("ahorra_unlocked","1"); }catch{}
+  $("m-lock").classList.add("hidden");
+  pinEntry = ""; renderPinDots();
+  toast(`Bienvenido, ${esc(S.owner)} 💚`); SFX.pop();
+}
+function lockNow(){
+  if(!pinIsSet()) return;
+  try{ sessionStorage.removeItem("ahorra_unlocked"); }catch{}
+  pinEntry = ""; renderPinDots();
+  $("m-lock").classList.remove("hidden");
+}
+function renderPinDots(){
+  const d = $("pin-dots"); if(!d) return;
+  d.innerHTML = [0,1,2,3].map(i=>`<span class="pin-dot ${i<pinEntry.length?"on":""}"></span>`).join("");
+}
+function pinPress(k){
+  SFX.tap();
+  if(k === "back"){ pinEntry = pinEntry.slice(0,-1); renderPinDots(); return; }
+  if(pinEntry.length >= 4) return;
+  pinEntry += k; renderPinDots();
+  if(pinEntry.length === 4){
+    setTimeout(()=>{
+      if(hashPin(pinEntry) === S.security.pinHash) unlockNow();
+      else { SFX.err(); pinEntry = ""; renderPinDots(); $("pin-wrong").classList.remove("hidden"); setTimeout(()=>$("pin-wrong").classList.add("hidden"), 1600); }
+    }, 140);
+  }
+}
+function applyPrivacy(){
+  document.body.classList.toggle("priv", !!S.security.privacy);
+  const t = $("priv-toggle"); if(t) t.checked = !!S.security.privacy;
+}
+
+/* ---------- RESPALDOS ---------- */
+function exportBackup(){
+  const data = JSON.stringify({ app:"ahorra-plus", v:3, exportD:today(), data:S }, null, 1);
+  dl(`ahorra-respaldo-${today()}.json`, data, "application/json");
+}
+function importBackup(file){
+  const reader = new FileReader();
+  reader.onload = e=>{
+    try{
+      const j = JSON.parse(e.target.result);
+      const D = j.app === "ahorra-plus" ? j.data : j;
+      if(!D || !Array.isArray(D.goals) || !Array.isArray(D.income) || !D.owner){
+        SFX.err(); toast("Ese archivo no es un respaldo de Ahorra+ ⚠️"); return;
+      }
+      if(confirm(`Restaurar respaldo de ${D.owner}? Reemplaza los datos actuales (las ${S.goals.length} metas y ${S.income.length+S.expenses.length} movimientos actuales se sustituyen).`)){
+        localStorage.setItem(KEY, JSON.stringify(D));
+        try{ localStorage.setItem(KEY_V2, JSON.stringify(D)); }catch{}
+        toast("✅ Respaldo restaurado");
+        setTimeout(()=>location.reload(), 700);
+      }
+    }catch{ SFX.err(); toast("No pude leer ese archivo ⚠️"); }
+  };
+  reader.readAsText(file);
+}
+
+/* ---------- Rendimiento: re-dibujar al girar o cambiar tamaño ---------- */
+let rszT;
+window.addEventListener("resize", ()=>{
+  clearTimeout(rszT);
+  rszT = setTimeout(()=>{ if(curView === "stats") try{ refreshStats(); }catch{} if(curView === "home") try{ renderDashboard(); }catch{} }, 250);
+});
+ACH_DEFS.push(
+  { id:"deps20",    e:"🏆",  name:"20 depósitos",       check:()=>depCount()>=20,  p:()=>[depCount(),20] },
+  { id:"goals5",    e:"🌟",  name:"5 metas cumplidas",  check:()=>goalsDoneCount()>=5, p:()=>[goalsDoneCount(),5] },
+  { id:"debt0",     e:"🎉",  name:"1ª deuda liquidada", check:()=>S.debts.some(d=>d.done) },
+  { id:"ef100",     e:"🛡️",  name:"Fondo completo",     check:()=>{ const ef = EF(); return ef && ef.total>0 && ef.saved>=ef.total; }, p:()=>{ const ef = EF(); return ef&&ef.total>0 ? [ef.saved,ef.total] : [0,1]; } },
+  { id:"chal10",    e:"🎯",  name:"10 desafíos",        check:()=>(S.chalLog.total||0)>=10, p:()=>[S.chalLog.total||0,10] },
+  { id:"rec1",      e:"🔁",  name:"Automatización",     check:()=>S.recurring.some(r=>r.on) },
+  { id:"income6",   e:"📈",  name:"6 ingresos",         check:()=>S.income.length>=6, p:()=>[S.income.length,6] },
+  { id:"locked",    e:"🔒",  name:"App protegida",      check:()=>pinIsSet() && S.security.lock },
+);
+LEVEL_TITLES.push("Titan 💎","Dragón de oro 🐉","Imperio 🏰","Leyenda viva ⚡","MITO 🌟");
 
 /* ================== RENDER TOTAL ================== */
 function renderAll(){
   renderDashboard(); renderGoals(); renderCalendar(); renderRems();
   renderActivity(); renderBudget(); renderProfile(); renderGB();
-  drawStatsCharts();
+  renderEF(); renderDebts(); renderRecur(); renderChallenges();
+  applyAvatar(); applyPrivacy(); applySecUI();
+  try{ drawStatsCharts(); }catch(err){ console.warn("charts:", err); }
+  if(curView === "stats") try{ refreshStats(); }catch(err){ console.warn("stats v3:", err); }
+  checkChallenges();
+}
+function refreshStats(){
+  drawMonthsChart(); drawNetChart();
 }
 
 /* ================== WIRING ================== */
@@ -1192,7 +1970,7 @@ function wire(){
   // segmented de metas
   document.querySelectorAll("#view-goals .seg").forEach(s => s.addEventListener("click", ()=>{
     document.querySelectorAll("#view-goals .seg").forEach(x => x.classList.toggle("active", x === s));
-    ["goals","cal","rem"].forEach(k => $("seg-"+k).classList.toggle("hidden", k !== s.dataset.seg));
+    ["goals","fin","cal","rem"].forEach(k => $("seg-"+k).classList.toggle("hidden", k !== s.dataset.seg));
     if(s.dataset.seg === "cal") renderCalendar();
     SFX.tap();
   }));
@@ -1324,20 +2102,69 @@ function wire(){
     toast(e.target.checked ? "🪙 Redondeo automático activado" : "Redondeo desactivado");
   });
   $("gb-goal").addEventListener("change", e=>{ S.gb.goal = e.target.value; save(); });
-  $("group-open").addEventListener("click", ()=>{
-    if((S.gb.code||"") && !$("gp-code").value.trim()) $("gp-code").value = S.gb.code;
-    openPanel("panel-group");
+
+  // v3 · fondo de emergencia / deudas / recurrentes
+  $("ef-save").addEventListener("click", submitEF);
+  $("debt-add").addEventListener("click", ()=>openDebtModal(null));
+  $("recur-add").addEventListener("click", openRecurModal);
+  $("recur-save").addEventListener("click", submitRecur);
+  document.querySelectorAll("#debt-kind-seg .seg").forEach(s => s.addEventListener("click", ()=>{
+    $("debt-kind").value = s.dataset.kind;
+    document.querySelectorAll("#debt-kind-seg .seg").forEach(x => x.classList.toggle("active", x === s));
+    $("debt-limit-wrap").classList.toggle("hidden", s.dataset.kind !== "card");
+    SFX.tap();
+  }));
+  $("debt-form").addEventListener("submit", e=>{ e.preventDefault(); submitDebt(); });
+  $("debt-kind").addEventListener("change", ()=>$("debt-limit-wrap").classList.toggle("hidden", $("debt-kind").value!=="card"));
+  $("pay-save").addEventListener("click", submitPay);
+  // v3 · simulador segmented
+  document.querySelectorAll("#calc-seg .seg").forEach(s => s.addEventListener("click", ()=>{
+    calMode = s.dataset.mode || "calc";
+    document.querySelectorAll("#calc-seg .seg").forEach(x => x.classList.toggle("active", x === s));
+    const sim = calMode === "sim";
+    $("sim-wrap").classList.toggle("hidden", !sim);
+    $("sim-target-wrap").classList.toggle("hidden", !sim);
+    $("calc-goal-view").classList.toggle("hidden", sim);
+    $("calc-big-label").textContent = sim ? "fecha de llegada" : "al día";
+    SFX.tap();
+  }));
+
+  // v3 · informe PDF
+  $("pdf-btn").addEventListener("click", aiMonthlyReport);
+
+  // v3 · seguridad
+  document.querySelectorAll("#keypad button").forEach(b => b.addEventListener("click", ()=>pinPress(b.dataset.key)));
+  $("pin-save").addEventListener("click", ()=>{
+    const np = $("pin-new").value;
+    if(!/^\d{4}$/.test(np)){ SFX.err(); toast("El PIN debe tener exactamente 4 dígitos 💛"); return; }
+    if(pinIsSet() && hashPin($("pin-old").value) !== S.security.pinHash){ SFX.err(); toast("El PIN actual no coincide ⚠️"); return; }
+    S.security.pinHash = hashPin(np); save();
+    $("pin-old").value = ""; $("pin-new").value = "";
+    SFX.pop(); toast("🔒 PIN guardado — app protegida", true);
   });
-  $("gp-join").addEventListener("click", gpJoin);
-  $("gp-leave").addEventListener("click", gpLeave);
-  $("gp-code").addEventListener("keydown", e=>{ if(e.key === "Enter"){ e.preventDefault(); gpJoin(); } });
-  $("gp-msgform").addEventListener("submit", e=>{
-    e.preventDefault();
-    const t = $("gp-input").value.trim(); if(!t) return;
-    gpBubble(S.owner || "Yo", t, true);
-    if(GP){ try{ GP.sendMsg({ n:S.owner || "Yo", t }); }catch{} }
-    $("gp-input").value = "";
+  $("pin-del").addEventListener("click", ()=>{
+    if(!pinIsSet()){ toast("No hay PIN puesto"); return; }
+    if(confirm("¿Quitar el PIN? La app quedará sin bloqueo")){
+      S.security.pinHash = ""; S.security.lock = false; save();
+      applySecUI(); toast("PIN eliminado 🔓");
+    }
   });
+  $("lock-toggle").addEventListener("change", e=>{
+    if(!pinIsSet()){ e.target.checked = false; SFX.err(); toast("Primero elige un PIN de 4 dígitos 🔒"); return; }
+    S.security.lock = e.target.checked; save();
+    if(S.security.lock){ lockNow(); toast("Bloqueo activo 🔐"); }
+    else toast("Bloqueo desactivado");
+  });
+  $("priv-toggle").addEventListener("change", e=>{ S.security.privacy = e.target.checked; save(); applyPrivacy(); });
+  $("lock-btn").addEventListener("click", ()=>{ if(pinIsSet()) lockNow(); else { toast("Configura un PIN en Ajustes 🔒"); openPanel("panel-settings"); } });
+
+  // v3 · respaldos
+  $("backup-export").addEventListener("click", exportBackup);
+  $("backup-import").addEventListener("click", ()=>$("backup-file").click());
+  $("backup-file").addEventListener("change", e=>{ const f = e.target.files?.[0]; if(f) importBackup(f); e.target.value = ""; });
+
+  // v3 · avatar con foto
+  wireAvatarPhoto();
 }
 
 /* ================== SALUDO ================== */
@@ -1359,6 +2186,20 @@ function start(){
   convCalc();
   bubble(`¡Hola, ${S.owner}! 👩‍💻 Soy tu IA financiera: <b>${fmt(totalSaved())}</b> ahorrados y racha de <b>${streakCalc()}</b> días 🔥 Pregúntame por tus metas, presupuesto o cómo ahorrar.`);
   setTimeout(checkAch, 1200);
+  lockCheck();
+}
+/* bloqueo por PIN al abrir la app */
+function lockCheck(){
+  if(!pinIsSet() || !S.security.lock) return;
+  let u = null;
+  try{ u = sessionStorage.getItem("ahorra_unlocked"); }catch{}
+  if(u !== "1"){ pinEntry = ""; renderPinDots(); $("pin-wrong").classList.add("hidden"); $("m-lock").classList.remove("hidden"); }
+}
+/* refleja el estado de seguridad en Ajustes */
+function applySecUI(){
+  const li = $("lock-toggle"); if(li){ li.checked = !!S.security.lock; }
+  const pt = $("priv-toggle"); if(pt){ pt.checked = !!S.security.privacy; }
+  const ph = $("pin-help"); if(ph) ph.textContent = pinIsSet() ? "PIN configurado ✅" : "Sin PIN — configura uno para bloquear la app";
 }
 
 document.addEventListener("DOMContentLoaded", ()=>{
